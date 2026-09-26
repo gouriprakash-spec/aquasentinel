@@ -1,0 +1,111 @@
+"""Tests for app/server.py - the FastAPI wiring around pull_reading() and the DB.
+
+Uses FastAPI's TestClient (no real network, no real HTTP server process) and monkeypatches
+pull_reading() so these tests don't depend on live USGS/NWS - that's covered by
+test_pull_reading.py and the manual live check already run for milestone 2.
+"""
+
+from __future__ import annotations
+
+from fastapi.testclient import TestClient
+
+from app import db, server
+from app.ingestion.usgs import UsgsDataUnavailable
+
+
+def _fake_reading(risk_tier: str = "Safe") -> dict:
+    return {
+        "location": "penns_landing",
+        "location_name": "Penn's Landing, Center City tidal Delaware",
+        "time": "2026-09-25T17:40:00-04:00",
+        "risk_tier": risk_tier,
+        "confidence": 0.974,
+        "source": "aquasentinel",
+        "source_url": "https://waterservices.usgs.gov/nwis/iv/?sites=01467200",
+        "retrieved_at": "2026-09-25T22:09:47+00:00",
+        "evidence": {
+            "proxies": {
+                "water_temp_c": 21.5, "sp_conductance_uscm": 266.0,
+                "dissolved_oxygen_mgl": 6.6, "ph": 7.3, "turbidity_fnu": 6.3,
+            },
+            "proxy_timestamps": {},
+            "rainfall_mm": {"precip_mm": 0.0, "precip_prev_24h_mm": 0.0},
+        },
+        "threshold_cfu_100ml": 235,
+        "model_version": "rf_B_post2021",
+        "regime": "B_post2021",
+        "kind": "model_estimate",
+    }
+
+
+def _client(monkeypatch, tmp_path):
+    # TestClient only runs the app's lifespan (which calls db.init_db()) when used as a
+    # context manager - call init_db() directly so a plain TestClient(...) still works.
+    monkeypatch.setattr(db, "DB_PATH", tmp_path / "test.db")
+    db.init_db()
+    return TestClient(server.app)
+
+
+def test_pull_reading_endpoint_scores_persists_and_returns(monkeypatch, tmp_path):
+    monkeypatch.setattr(server, "pull_reading", lambda: _fake_reading("Unsafe"))
+    client = _client(monkeypatch, tmp_path)
+
+    response = client.post("/api/pull-reading")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["risk_tier"] == "Unsafe"
+    assert "estimate_cfu_100ml" not in body
+
+    stored = db.get_recent_readings(db_path=tmp_path / "test.db")
+    assert len(stored) == 1
+    assert stored[0]["risk_tier"] == "Unsafe"
+
+
+def test_pull_reading_endpoint_fails_closed_on_usgs_error(monkeypatch, tmp_path):
+    def raise_unavailable():
+        raise UsgsDataUnavailable("USGS is down")
+
+    monkeypatch.setattr(server, "pull_reading", raise_unavailable)
+    client = _client(monkeypatch, tmp_path)
+
+    response = client.post("/api/pull-reading")
+
+    assert response.status_code == 503
+    # Nothing should have been persisted from a failed pull.
+    assert db.get_recent_readings(db_path=tmp_path / "test.db") == []
+
+
+def test_readings_endpoint_returns_newest_first(monkeypatch, tmp_path):
+    monkeypatch.setattr(db, "DB_PATH", tmp_path / "test.db")
+    db.init_db()
+    db.insert_reading(_fake_reading("Safe"))
+    db.insert_reading(_fake_reading("Unsafe"))
+
+    client = TestClient(server.app)
+    response = client.get("/api/readings")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body[0]["risk_tier"] == "Unsafe"
+    assert body[1]["risk_tier"] == "Safe"
+
+
+def test_readings_endpoint_respects_limit(monkeypatch, tmp_path):
+    monkeypatch.setattr(db, "DB_PATH", tmp_path / "test.db")
+    db.init_db()
+    for _ in range(5):
+        db.insert_reading(_fake_reading())
+
+    client = TestClient(server.app)
+    response = client.get("/api/readings", params={"limit": 2})
+
+    assert len(response.json()) == 2
+
+
+def test_index_serves_the_dashboard_html():
+    client = TestClient(server.app)
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert "AquaSentinel" in response.text

@@ -1,0 +1,22 @@
+{
+  "model": {
+    "n_rows": 60,
+    "n_unsafe": 15,
+    "cv_folds": 5,
+    "random_forest": {
+      "precision": 0.615,
+      "recall": 0.533
+    },
+    "linear_regression_baseline": {
+      "precision": 0.0,
+      "recall": 0.0
+    }
+  },
+  "rules_fallback": {
+    "threshold_mm": 2.5,
+    "n_rows": 330,
+    "n_unsafe": 49,
+    "precision": 0.372,
+    "recall": 0.653
+  }
+}

@@ -1,0 +1,418 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AquaSentinel — Landing</title>
+<!--
+  AquaSentinel landing page — served by app/server.py (FastAPI), plain HTML + CSS +
+  vanilla JS, no build step. Framework-free on purpose per CLAUDE.md.
+
+  pullReading() is REAL (as of milestone 2, 2026-09-25): it POSTs to /api/pull-reading,
+  which runs app/scoring/pull_reading.py - live USGS 01467200 + NWS KPHL rainfall, scored
+  by the trained model, with the Safe/Unsafe tier decided by deterministic code.
+
+  One thing is still MOCKED, marked `TODO(real)` in the JS below:
+    subscribe() -> should POST the phone to a backend that calls the Meta WhatsApp
+                   Cloud API. Currently just flips UI state.
+  See BUILD-SPEC.md for the real data sources, endpoints and honesty guardrails.
+-->
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<style>
+  :root{
+    --bg:#F4F6F7; --surface:#fff; --ink:#0F1E27; --muted:#52646E; --faint:#8496A0;
+    --line:#DCE3E6; --teal:#0B5563; --tealsoft:#EDF3F4; --water:#1A6E8E;
+    --green:#157F52; --greenbg:#E6F2EB; --red:#B02D1E; --redbg:#FBEAE7;
+    --amberbg:#FFF6E6; --amberline:#F0D9A8; --amberink:#7A5200;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:'IBM Plex Sans',system-ui,sans-serif;}
+  .mono{font-family:'IBM Plex Mono',ui-monospace,monospace;}
+  .disp{font-family:'Space Grotesk',system-ui,sans-serif;}
+  .wrap{max-width:1200px;margin:0 auto;padding:36px 24px;display:flex;flex-direction:column;gap:22px;}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:18px;}
+  /* hero */
+  .hero{display:flex;gap:24px;}
+  .hero > div{flex:1;}
+  .hero .left{padding:30px 32px;display:flex;flex-direction:column;}
+  .brand{display:flex;align-items:center;gap:16px;}
+  .brand img{width:60px;height:60px;object-fit:contain;}
+  .brand h1{margin:0;font-size:32px;letter-spacing:-0.02em;}
+  .brand .tag{font-size:13.5px;color:var(--teal);font-weight:500;margin-top:2px;}
+  .statement{font-size:15.5px;color:#33454E;line-height:1.6;margin-top:20px;}
+  .chips{margin-top:auto;padding-top:20px;display:flex;gap:10px;flex-wrap:wrap;}
+  .chip{font-size:12.5px;color:var(--teal);background:var(--tealsoft);border-radius:8px;padding:7px 12px;}
+  .map{overflow:hidden;display:flex;flex-direction:column;}
+  .map .maphead{padding:16px 20px 0;display:flex;justify-content:space-between;align-items:center;}
+  .map #reachMap{width:100%;height:100%;background:var(--tealsoft);font-family:'IBM Plex Sans',sans-serif;}
+  .map .leaflet-tooltip.reach-label{background:#fff;border:1px solid var(--line);border-radius:8px;padding:4px 9px;font-size:11px;font-weight:600;color:var(--ink);box-shadow:none;white-space:nowrap;}
+  .map .leaflet-tooltip.reach-label::before{border-right-color:var(--line);}
+  .legend{display:flex;gap:18px;flex-wrap:wrap;padding:10px 20px;border-top:1px solid #EEF1F2;}
+  .legend span{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--muted);}
+  /* subscribe strip */
+  .substrip{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:16px 22px;}
+  .substrip .icon{width:40px;height:40px;flex:none;border-radius:11px;background:#EAF3F6;display:flex;align-items:center;justify-content:center;}
+  /* buttons */
+  .btn{display:inline-flex;align-items:center;gap:9px;color:#fff;font-size:14px;font-weight:600;border:none;border-radius:11px;padding:12px 20px;cursor:pointer;font-family:inherit;background:var(--teal);}
+  .btn:hover{background:#0A4A57;}
+  .btn.green{background:var(--green);}
+  /* toolbar */
+  .toolbar{display:flex;align-items:center;justify-content:space-between;gap:20px;}
+  .toolbar .sub{font-size:13px;color:var(--muted);margin-top:3px;line-height:1.5;max-width:720px;}
+  .pill{font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--amberink);background:var(--amberbg);border:1px solid var(--amberline);border-radius:999px;padding:6px 11px;}
+  /* banner */
+  .banner{border-radius:14px;padding:16px 20px;display:flex;align-items:center;gap:16px;font-size:14.5px;}
+  .dot{width:12px;height:12px;border-radius:50%;}
+  /* table */
+  .tablecard{overflow:hidden;}
+  table{border-collapse:collapse;width:100%;}
+  th,td{text-align:left;}
+  thead tr{background:#F7F9F9;border-bottom:1px solid #E4E9EA;}
+  th{font-size:11px;letter-spacing:0.03em;color:var(--faint);font-weight:600;padding:13px 11px;}
+  th:first-child{padding-left:18px;} th:last-child{padding-right:18px;}
+  th .u{color:#B7C4C9;font-weight:500;}
+  tbody td{font-size:12.5px;color:#33454E;padding:13px 11px;}
+  tbody td:first-child{padding-left:18px;} tbody td:last-child{padding-right:18px;}
+  tbody tr{border-bottom:1px solid #EEF1F2;}
+  td.est{color:var(--ink);font-weight:600;}
+  .status{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;font-weight:600;border-radius:999px;padding:5px 12px;}
+  @media (max-width:860px){ .hero{flex-direction:column;} }
+</style>
+</head>
+<body>
+<main class="wrap">
+
+  <!-- ===== hero ===== -->
+  <section class="hero">
+    <div class="left card">
+      <div class="brand">
+        <img src="logo.png" alt="AquaSentinel logo">
+        <div>
+          <h1 class="disp">AquaSentinel</h1>
+          <div class="tag">Real-time water-safety early warning</div>
+        </div>
+      </div>
+      <p class="statement">
+        Is it a good day to get on the Delaware River? Find out with AquaSentinel.
+        We estimate bacterial contamination in urban rivers
+        <strong>in minutes instead of the 18&ndash;24 hours a lab culture takes</strong>
+        &mdash; reading live proxies from the USGS Penn's Landing gauge and the weather
+        station, then flagging the reach Safe or Unsafe.
+      </p>
+      <div class="chips">
+        <span class="chip">USGS gauge 01467200</span>
+        <span class="chip">Live weather station</span>
+        <span class="chip">DRBC E. coli labels</span>
+        <span class="chip">EPA 235 CFU/100mL</span>
+      </div>
+    </div>
+
+    <div class="map card">
+      <div class="maphead">
+        <div class="disp" style="font-size:15px;font-weight:600;">Philadelphia, PA &middot; monitored reach</div>
+        <span style="font-size:11px;color:var(--faint);">real coordinates &middot; USGS + EPA WQP</span>
+      </div>
+      <div style="flex:1;min-height:220px;">
+        <div id="reachMap"></div>
+      </div>
+      <div class="legend">
+        <span><span style="width:13px;height:13px;background:#D9822B;border-radius:50%;display:inline-block;"></span>USGS proxy gauge (live)</span>
+        <span><span style="width:13px;height:13px;border:2.4px solid #B02D1E;border-radius:50%;display:inline-block;"></span>DRBC lab station</span>
+        <span><span style="width:13px;height:13px;background:#4A9CBF;border-radius:50%;display:inline-block;"></span>Weather station (NWS)</span>
+        <span><span style="width:16px;height:6px;background:#E7A79E;border-radius:3px;display:inline-block;"></span>Monitored reach &middot; alert</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== subscribe strip ===== -->
+  <section class="card substrip">
+    <div style="display:flex;align-items:center;gap:14px;min-width:0;">
+      <div class="icon">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M6 9A6 6 0 0 1 18 9C18 15 21 17 21 17H3C3 17 6 15 6 9Z" stroke="#0B5563" stroke-width="1.8" stroke-linejoin="round"/><path d="M10 21H14" stroke="#0B5563" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </div>
+      <div id="subText">
+        <div class="disp" style="font-size:16px;font-weight:600;">Get alerts on your phone</div>
+        <div style="font-size:13px;color:var(--muted);margin-top:2px;">Water-safety warnings for the Center City reach, pushed the moment status changes.</div>
+      </div>
+    </div>
+    <button id="subBtn" class="btn" onclick="subscribe()">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M6 9A6 6 0 0 1 18 9C18 15 21 17 21 17H3C3 17 6 15 6 9Z" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/><path d="M10 21H14" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/></svg>
+      <span id="subLabel">Subscribe to alerts</span>
+    </button>
+  </section>
+
+  <!-- ===== toolbar ===== -->
+  <section class="toolbar">
+    <div>
+      <div class="disp" style="font-size:20px;font-weight:600;">Live readings</div>
+      <div class="sub">Each pull reads live data from the <strong>USGS Penn's Landing gauge (01467200)</strong>
+        and the <strong>PHL weather station</strong>, then scores how safe the Center City tidal
+        Delaware reach is for recreation right now. Ben Franklin Bridge and Navy Yard are the DRBC
+        lab stations whose past E. coli tests trained the model.</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:14px;flex:none;">
+      <span class="pill" id="pullPill">LIVE MODEL ESTIMATE</span>
+      <button class="btn" id="pullBtn" onclick="pullReading()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M20 12A8 8 0 1 1 12 4" stroke="#fff" stroke-width="1.9" stroke-linecap="round"/><path d="M12 4L16 4L16 8" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 8V12L15 14" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Pull latest reading
+      </button>
+    </div>
+  </section>
+
+  <!-- ===== latest banner ===== -->
+  <section id="banner" class="banner"></section>
+
+  <!-- ===== table ===== -->
+  <section class="card tablecard">
+    <table>
+      <thead>
+        <tr>
+          <th>TIME</th>
+          <th>RAIN TODAY <span class="u">mm</span></th>
+          <th>RAIN 24H <span class="u">mm</span></th>
+          <th>TURBIDITY <span class="u">FNU</span></th>
+          <th>TEMP <span class="u">&deg;C</span></th>
+          <th>SP. COND <span class="u">&micro;S/cm</span></th>
+          <th>DISS. O&#8322; <span class="u">mg/L</span></th>
+          <th>pH</th>
+          <th>MODEL CONFIDENCE</th>
+          <th>STATUS</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </section>
+
+</main>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script>
+  // ---- reach map (real coordinates, not schematic) ----
+  // Coordinates pulled 2026-09-25 from the live USGS site service (gauge) and the EPA
+  // Water Quality Portal station service (DRBC labels) - not estimated from the schematic.
+  // Weather station coords pulled 2026-09-25 from api.weather.gov/stations/KPHL directly.
+  var REACH_SITES = {
+    gauge: { name: "Penn's Landing — USGS gauge 01467200", lat: 39.946402, lon: -75.139360 },
+    benFranklinBridge: { name: "Ben Franklin Bridge — DRBC E. coli station", lat: 39.953309, lon: -75.136832 },
+    navyYard: { name: "Navy Yard — DRBC E. coli station", lat: 39.880737, lon: -75.172034 },
+    weatherStation: { name: "NWS station KPHL — Philadelphia Intl Airport", lat: 39.87327, lon: -75.22678 }
+  };
+
+  function initReachMap(){
+    var map = L.map('reachMap', {
+      zoomControl: true,
+      scrollWheelZoom: false,
+      attributionControl: true
+    });
+    // Leaflet 1.9+ bakes a Ukrainian-flag SVG into its default attribution prefix
+    // (leafletjs.com/2022/... solidarity gesture). Drop the prefix - keep only the
+    // Esri tile credit below, which their terms of service actually require.
+    map.attributionControl.setPrefix(false);
+    var bounds = L.latLngBounds([
+      [REACH_SITES.gauge.lat, REACH_SITES.gauge.lon],
+      [REACH_SITES.benFranklinBridge.lat, REACH_SITES.benFranklinBridge.lon],
+      [REACH_SITES.navyYard.lat, REACH_SITES.navyYard.lon],
+      [REACH_SITES.weatherStation.lat, REACH_SITES.weatherStation.lon]
+    ]);
+    // The weather station sits ~7mi from the river stations (docs/product-brief.md's
+    // "rainfall is a metro proxy" caveat) - fitting all four shows that real distance
+    // honestly rather than hiding it by zooming in on just the river cluster. Extra left
+    // padding makes room for the weather station's tooltip, which extends leftward since
+    // it's the westernmost marker.
+    map.fitBounds(bounds, { paddingTopLeft: [170, 20], paddingBottomRight: [140, 20] });
+
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+      maxZoom: 18,
+      attribution: 'Tiles &copy; Esri &mdash; Esri, HERE, Garmin, USGS, NGA, EPA, NPS'
+    }).addTo(map);
+
+    // Monitored reach: the Delaware between the two DRBC label stations that bracket the gauge.
+    L.polyline(
+      [[REACH_SITES.benFranklinBridge.lat, REACH_SITES.benFranklinBridge.lon],
+       [REACH_SITES.gauge.lat, REACH_SITES.gauge.lon],
+       [REACH_SITES.navyYard.lat, REACH_SITES.navyYard.lon]],
+      { color: '#B02D1E', weight: 3, dashArray: '6 6', opacity: 0.75 }
+    ).addTo(map);
+
+    L.circleMarker([REACH_SITES.gauge.lat, REACH_SITES.gauge.lon], {
+      radius: 8, color: '#8A5A1E', weight: 2, fillColor: '#D9822B', fillOpacity: 1
+    }).addTo(map).bindTooltip("Penn's Landing<br>USGS gauge 01467200", {
+      permanent: true, direction: 'right', className: 'reach-label', offset: [10, 0]
+    });
+
+    L.circleMarker([REACH_SITES.benFranklinBridge.lat, REACH_SITES.benFranklinBridge.lon], {
+      radius: 7, color: '#B02D1E', weight: 2.4, fillColor: '#fff', fillOpacity: 1
+    }).addTo(map).bindTooltip("Ben Franklin Bridge", {
+      permanent: true, direction: 'right', className: 'reach-label', offset: [9, 0]
+    });
+
+    L.circleMarker([REACH_SITES.navyYard.lat, REACH_SITES.navyYard.lon], {
+      radius: 7, color: '#B02D1E', weight: 2.4, fillColor: '#fff', fillOpacity: 1
+    }).addTo(map).bindTooltip("Navy Yard", {
+      permanent: true, direction: 'right', className: 'reach-label', offset: [9, 0]
+    });
+
+    L.circleMarker([REACH_SITES.weatherStation.lat, REACH_SITES.weatherStation.lon], {
+      radius: 7, color: '#0B5563', weight: 2, fillColor: '#4A9CBF', fillOpacity: 1
+    }).addTo(map).bindTooltip("NWS weather station (KPHL)<br>Philadelphia Intl Airport", {
+      // Westernmost marker - label extends left, away from the Navy Yard tooltip
+      // immediately to its northeast, so the two don't overlap.
+      permanent: true, direction: 'left', className: 'reach-label', offset: [-9, 0]
+    });
+  }
+
+  initReachMap();
+</script>
+<script>
+  // ---- state ----
+  // Populated from GET /api/readings on load - no fake rows on first paint. Real pulls
+  // come from POST /api/pull-reading, which runs app/scoring/pull_reading.py (live USGS
+  // + NWS + the trained model) via app/server.py. See BUILD-SPEC.md.
+  var rows = [];
+
+  function round1(x){ return Math.round(x*10)/10; }
+
+  function formatTime(isoString){
+    var d = new Date(isoString);
+    return ("0"+d.getHours()).slice(-2) + ":" + ("0"+d.getMinutes()).slice(-2);
+  }
+
+  // Maps a reading into what render() draws. Accepts either shape: the live API's
+  // contract from POST /api/pull-reading (nested evidence.proxies/rainfall_mm), or the
+  // flat stored-row shape from GET /api/readings (app/db.py's columns).
+  function toDisplayRow(reading){
+    var isStored = 'reading_time' in reading;
+    var proxies = isStored ? reading : reading.evidence.proxies;
+    var rainToday = isStored ? reading.precip_mm : reading.evidence.rainfall_mm.precip_mm;
+    var rain24 = isStored ? reading.precip_prev_24h_mm : reading.evidence.rainfall_mm.precip_prev_24h_mm;
+    var time = isStored ? reading.reading_time : reading.time;
+    return {
+      time: formatTime(time),
+      rainToday: round1(rainToday),
+      rain24: round1(rain24),
+      turb: round1(proxies.turbidity_fnu),
+      temp: round1(proxies.water_temp_c),
+      cond: round1(proxies.sp_conductance_uscm),
+      dox: round1(proxies.dissolved_oxygen_mgl),
+      ph: round1(proxies.ph),
+      confidencePct: Math.round(reading.confidence * 100),
+      status: reading.risk_tier
+    };
+  }
+
+  function loadRecentReadings(){
+    fetch('/api/readings?limit=9')
+      .then(function(r){ return r.json(); })
+      .then(function(stored){
+        rows = stored.map(toDisplayRow);
+        render();
+      })
+      .catch(function(){ /* fresh DB or offline - start empty, never fabricate rows */ });
+  }
+
+  function pullReading(){
+    var btn = document.getElementById('pullBtn');
+    var pill = document.getElementById('pullPill');
+    btn.disabled = true;
+    btn.style.opacity = 0.6;
+    pill.textContent = 'PULLING LIVE DATA…';
+
+    fetch('/api/pull-reading', { method: 'POST' })
+      .then(function(r){
+        if (!r.ok){
+          return r.json().then(function(err){ throw new Error(err.detail || 'Pull failed'); });
+        }
+        return r.json();
+      })
+      .then(function(reading){
+        rows = [toDisplayRow(reading)].concat(rows).slice(0, 9);
+        pill.textContent = 'LIVE MODEL ESTIMATE';
+        render();
+      })
+      .catch(function(err){
+        pill.textContent = 'PULL FAILED — SEE CONSOLE';
+        console.error('pullReading failed:', err);
+      })
+      .finally(function(){
+        btn.disabled = false;
+        btn.style.opacity = 1;
+      });
+  }
+
+  // ---- subscribe ----
+  var subscribed = false;
+  function subscribe(){
+    // TODO(real): POST the phone number to your backend, which calls the Meta WhatsApp
+    // Cloud API with an approved template. Only flip UI on a 200. See BUILD-SPEC.md.
+    subscribed = true;
+    document.getElementById('subLabel').textContent = "Subscribed";
+    document.getElementById('subBtn').classList.add('green');
+    document.getElementById('subText').innerHTML =
+      '<div style="display:flex;align-items:center;gap:10px;">' +
+      '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="#157F52" stroke-width="1.8"/><path d="M8 12L11 15L16 9" stroke="#157F52" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
+      '<div style="font-size:13.5px;color:#215C40;line-height:1.5;">You\'re subscribed &mdash; a confirmation alert has been sent to your registered phone ' +
+      '<strong>&bull;&bull;&bull; &bull;&bull;&bull; 4821</strong>. <span style="color:#7A8F82;">Simulated; real delivery runs through the Meta WhatsApp Cloud API.</span></div></div>';
+  }
+
+  // ---- render ----
+  function statusStyle(unsafe){
+    return unsafe
+      ? {color:'#B02D1E', bg:'#FBEAE7'}
+      : {color:'#157F52', bg:'#E6F2EB'};
+  }
+
+  function render(){
+    var b = document.getElementById('banner');
+
+    if (rows.length === 0){
+      b.style.background = '#F7F9F9';
+      b.style.border = '1px solid #E4E9EA';
+      b.innerHTML = '<div style="color:var(--muted);">No readings yet &mdash; click &ldquo;Pull latest reading&rdquo; to fetch a live estimate.</div>';
+      document.getElementById('tbody').innerHTML = '';
+      return;
+    }
+
+    // banner
+    var latest = rows[0];
+    var s = statusStyle(latest.status === "Unsafe");
+    b.style.background = latest.status === "Unsafe" ? '#FDF2F0' : '#EEF7F1';
+    b.style.border = '1px solid ' + (latest.status === "Unsafe" ? '#F0CFC8' : '#C7E4D3');
+    b.innerHTML =
+      '<span class="dot" style="background:'+s.color+'"></span>' +
+      '<div>Latest reading &mdash; <span class="disp" style="font-weight:700;color:'+s.color+'">'+latest.status+'</span>' +
+      ' &middot; model confidence <strong>'+latest.confidencePct+'%</strong> &middot; Center City reach &middot; '+latest.time+
+      ' <span style="color:var(--faint);">&middot; Source: AquaSentinel estimate</span></div>';
+
+    // table
+    var html = '';
+    for (var i=0;i<rows.length;i++){
+      var r = rows[i];
+      var st = statusStyle(r.status === "Unsafe");
+      var rowbg = (i===0) ? 'background:#F3FAF7;' : '';
+      html +=
+        '<tr style="'+rowbg+'">' +
+        '<td class="mono">'+r.time+'</td>' +
+        '<td class="mono">'+r.rainToday+'</td>' +
+        '<td class="mono">'+r.rain24+'</td>' +
+        '<td class="mono">'+r.turb+'</td>' +
+        '<td class="mono">'+r.temp+'</td>' +
+        '<td class="mono">'+r.cond+'</td>' +
+        '<td class="mono">'+r.dox+'</td>' +
+        '<td class="mono">'+r.ph+'</td>' +
+        '<td class="mono est">'+r.confidencePct+'%</td>' +
+        '<td><span class="status" style="color:'+st.color+';background:'+st.bg+';">' +
+        '<span style="width:7px;height:7px;border-radius:50%;background:'+st.color+';display:inline-block;"></span>'+r.status+'</span></td>' +
+        '</tr>';
+    }
+    document.getElementById('tbody').innerHTML = html;
+  }
+
+  loadRecentReadings();
+  pullReading();  // also fetch a fresh live reading on open, not just stored history
+  // Milestone 3: no background scheduler exists yet (see plan.md Open Questions) - this
+  // hourly refresh only runs while this tab stays open, it is not a server-side job.
+  setInterval(pullReading, 60 * 60 * 1000);
+</script>
+</body>
+</html>
