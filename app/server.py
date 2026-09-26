@@ -18,6 +18,9 @@ from fastapi.responses import FileResponse
 
 from app import db
 from app.alerts.gating import evaluate_reading
+from app.fhir import emit as fhir_emit
+from app.fhir import routes as fhir_routes
+from app.fhir import store as fhir_store
 from app.ingestion.nws import RainfallUnavailable
 from app.ingestion.usgs import UsgsDataUnavailable
 from app.scoring.pull_reading import pull_reading
@@ -28,10 +31,12 @@ LANDING_PAGE_DIR = Path(__file__).resolve().parents[1] / "docs" / "landing-page"
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     db.init_db()
+    fhir_store.init_db()
     yield
 
 
 app = FastAPI(title="AquaSentinel", lifespan=lifespan)
+app.include_router(fhir_routes.router)
 
 
 @app.get("/")
@@ -52,9 +57,9 @@ def api_pull_reading() -> dict:
     than a fabricated reading. The alert-rules gating (milestone 3) runs after every real
     pull - triggered here by the dashboard (on open, on click, or hourly while open), not
     by a background scheduler (see plan.md's Open Questions for that known gap). Its
-    decision isn't sent anywhere yet (no FHIR/WhatsApp until milestones 4-5) or returned
-    to the caller - it only updates the stored alert_state so change-of-state and the
-    48h all-clear window track correctly once something does act on them.
+    decision now also drives FHIR delivery to RPHSA's Subscription (milestone 4) when it
+    represents a real agency event - but that delivery is best-effort: a failure there
+    (see app/fhir/emit.py) never surfaces here or to the dashboard.
     """
     try:
         reading = pull_reading()
@@ -62,7 +67,8 @@ def api_pull_reading() -> dict:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     db.insert_reading(reading)
-    evaluate_reading(reading)
+    decision = evaluate_reading(reading)
+    fhir_emit.emit_event(reading, decision)
     return reading
 
 

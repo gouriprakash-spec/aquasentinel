@@ -10,6 +10,7 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from app import db, server
+from app.fhir import store as fhir_store
 from app.ingestion.usgs import UsgsDataUnavailable
 
 
@@ -42,7 +43,9 @@ def _client(monkeypatch, tmp_path):
     # TestClient only runs the app's lifespan (which calls db.init_db()) when used as a
     # context manager - call init_db() directly so a plain TestClient(...) still works.
     monkeypatch.setattr(db, "DB_PATH", tmp_path / "test.db")
+    monkeypatch.setattr(fhir_store, "DB_PATH", tmp_path / "test.db")
     db.init_db()
+    fhir_store.init_db()
     return TestClient(server.app)
 
 
@@ -78,7 +81,9 @@ def test_pull_reading_endpoint_fails_closed_on_usgs_error(monkeypatch, tmp_path)
 
 def test_readings_endpoint_returns_newest_first(monkeypatch, tmp_path):
     monkeypatch.setattr(db, "DB_PATH", tmp_path / "test.db")
+    monkeypatch.setattr(fhir_store, "DB_PATH", tmp_path / "test.db")
     db.init_db()
+    fhir_store.init_db()
     db.insert_reading(_fake_reading("Safe"))
     db.insert_reading(_fake_reading("Unsafe"))
 
@@ -93,7 +98,9 @@ def test_readings_endpoint_returns_newest_first(monkeypatch, tmp_path):
 
 def test_readings_endpoint_respects_limit(monkeypatch, tmp_path):
     monkeypatch.setattr(db, "DB_PATH", tmp_path / "test.db")
+    monkeypatch.setattr(fhir_store, "DB_PATH", tmp_path / "test.db")
     db.init_db()
+    fhir_store.init_db()
     for _ in range(5):
         db.insert_reading(_fake_reading())
 
@@ -109,3 +116,23 @@ def test_index_serves_the_dashboard_html():
 
     assert response.status_code == 200
     assert "AquaSentinel" in response.text
+
+
+def test_pull_reading_endpoint_succeeds_even_if_fhir_delivery_fails(monkeypatch, tmp_path):
+    monkeypatch.setattr(server, "pull_reading", lambda: _fake_reading("Unsafe"))
+    client = _client(monkeypatch, tmp_path)
+
+    # A real active Subscription pointing at an address that will genuinely fail to
+    # resolve - this is a full end-to-end resilience check, not a mocked one.
+    fhir_store.create_subscription(
+        "sub-1", "Flag?subject=Location/penns-landing", "http://unreachable-host.invalid/notifications",
+        "2026-06-01T00:00:00+00:00", db_path=tmp_path / "test.db",
+    )
+    fhir_store.update_subscription_status(
+        "sub-1", "active", "2026-06-01T00:00:00+00:00", db_path=tmp_path / "test.db"
+    )
+
+    response = client.post("/api/pull-reading")
+
+    assert response.status_code == 200
+    assert response.json()["risk_tier"] == "Unsafe"

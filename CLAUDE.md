@@ -37,6 +37,9 @@ If a conflict remains, stop and ask.
 - Test: `./venv/bin/python -m pytest app/tests/`
 - Dev server: `./venv/bin/uvicorn app.server:app --reload` (serves the dashboard at `/` and the
   API at `/api/pull-reading`, `/api/readings`)
+- RPHSA stub (Milestone 4 demo, fictional agency receiver): `./venv/bin/uvicorn
+  app.rphsa_stub:app --port 8001 --reload` (run alongside the main dev server so it can
+  register its Subscription and receive FHIR notifications)
 - Lint/typecheck: `[pending]` — not set up yet
 
 ## Build Order and Cut Line

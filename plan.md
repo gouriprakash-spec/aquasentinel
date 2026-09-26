@@ -49,7 +49,9 @@ Build top to bottom. If behind on Sep 27, **cut from the bottom, never the middl
    all-clear, season gate (public May 1 – Oct 31; agency year-round), fail-closed throughout.
    Done when tests cover each rule and a deliberately stale input produces no message.
 4. **FHIR out.** OAH IG Observation + `Flag` delivered over a FHIR `Subscription` to the RPHSA
-   stub. Done when a tier change produces a valid Flag at the stub endpoint, year-round.
+   stub, with real Subscription mechanics (criteria, channel, handshake) - see
+   `docs/superpowers/specs/2026-09-26-fhir-milestone4-design.md` for the full design. Done when
+   a tier change produces a valid Flag at the stub endpoint, year-round.
 5. **WhatsApp alerts.** OpenClaw broadcasts an already-decided signal to matching subscriptions
    on Meta's Cloud API test number, with source attribution. Done when a change of state reaches
    a pre-registered test phone and no other.
