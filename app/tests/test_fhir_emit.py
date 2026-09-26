@@ -123,3 +123,52 @@ def test_malformed_reading_does_not_raise(monkeypatch, tmp_path, caplog):
     emit.emit_event(broken_reading, {"location": "penns_landing", "agency_event": "unsafe_onset"})
 
     assert "FHIR delivery failed" in caplog.text
+
+
+def test_concurrent_unsafe_onset_does_not_create_duplicate_open_flags(monkeypatch, tmp_path):
+    """Final-review finding (Important): two racing pulls that both compute unsafe_onset
+    for the same location must not each create their own open Flag - a real risk since
+    /api/pull-reading runs in FastAPI's threadpool and gating's read-then-write on
+    alert_state isn't transactional. This simulates the race's end state directly rather
+    than with real threads, matching how test_fhir_routes.py tests its own dedupe logic."""
+    monkeypatch.setattr(store, "DB_PATH", tmp_path / "test.db")
+    store.init_db(db_path=tmp_path / "test.db")
+    store.create_subscription("sub-1", "Flag?subject=Location/penns-landing",
+                               "http://rphsa/notifications", "2026-06-01T00:00:00+00:00")
+    store.update_subscription_status("sub-1", "active", "2026-06-01T00:00:00+00:00")
+
+    calls = []
+    emit.emit_event(_reading("Unsafe"), {"location": "penns_landing", "agency_event": "unsafe_onset"},
+                     client=_client_recording_posts(calls))
+    first_flag_id = store.get_open_flag("penns_landing")["id"]
+
+    emit.emit_event(_reading("Unsafe"), {"location": "penns_landing", "agency_event": "unsafe_onset"},
+                     client=_client_recording_posts(calls))
+
+    with store._connect(tmp_path / "test.db") as conn:
+        count = conn.execute(
+            "SELECT COUNT(*) FROM fhir_flags WHERE location = ? AND status = 'active'",
+            ("penns_landing",),
+        ).fetchone()[0]
+    assert count == 1
+    assert store.get_open_flag("penns_landing")["id"] == first_flag_id
+
+
+def test_non_2xx_delivery_response_is_treated_as_a_failure(monkeypatch, tmp_path, caplog):
+    """Final-review finding (Critical): the spec's Endpoints step 5 explicitly requires a
+    non-2xx response to be logged as a failure, not silently treated as delivered."""
+    monkeypatch.setattr(store, "DB_PATH", tmp_path / "test.db")
+    store.init_db(db_path=tmp_path / "test.db")
+    store.create_subscription("sub-1", "Flag?subject=Location/penns-landing",
+                               "http://rphsa/notifications", "2026-06-01T00:00:00+00:00")
+    store.update_subscription_status("sub-1", "active", "2026-06-01T00:00:00+00:00")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500, text="internal error")
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+
+    emit.emit_event(_reading("Unsafe"), {"location": "penns_landing", "agency_event": "unsafe_onset"},
+                     client=client)
+
+    assert "FHIR delivery failed" in caplog.text

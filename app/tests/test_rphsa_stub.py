@@ -7,6 +7,8 @@ running (that combination is covered by app/tests/test_fhir_end_to_end.py in Tas
 
 from __future__ import annotations
 
+import asyncio
+
 import httpx
 
 from app import rphsa_stub
@@ -69,3 +71,35 @@ def test_receive_notification_endpoint_classifies_ping_as_handshake(tmp_path, mo
 
         listed = client.get("/rphsa/notifications")
         assert listed.json()[0]["kind"] == "handshake"
+
+
+def test_register_with_retry_stops_once_active(monkeypatch):
+    """Final-review finding (Critical): registering from inside lifespan, before uvicorn
+    starts accepting connections, means the very first handshake attempt can genuinely
+    fail even when both processes are started correctly. A bounded retry closes that gap."""
+    attempts = []
+
+    def fake_register(client=None):
+        attempts.append(1)
+        return {"status": "active"} if len(attempts) >= 3 else {"status": "error"}
+
+    monkeypatch.setattr(rphsa_stub, "register_with_aquasentinel", fake_register)
+
+    asyncio.run(rphsa_stub._register_with_retry(max_attempts=5, delay_seconds=0))
+
+    assert len(attempts) == 3  # stopped as soon as it became active, not all 5
+
+
+def test_register_with_retry_gives_up_after_max_attempts(monkeypatch, caplog):
+    attempts = []
+
+    def fake_register(client=None):
+        attempts.append(1)
+        return {"status": "error"}
+
+    monkeypatch.setattr(rphsa_stub, "register_with_aquasentinel", fake_register)
+
+    asyncio.run(rphsa_stub._register_with_retry(max_attempts=3, delay_seconds=0))
+
+    assert len(attempts) == 3
+    assert "Gave up registering" in caplog.text

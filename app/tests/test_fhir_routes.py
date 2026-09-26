@@ -105,3 +105,50 @@ def test_reregistering_same_criteria_and_endpoint_does_not_duplicate(monkeypatch
     with store._connect(tmp_path / "test.db") as conn:
         count = conn.execute("SELECT COUNT(*) FROM fhir_subscriptions").fetchone()[0]
     assert count == 1
+
+
+def test_non_dict_body_is_rejected_with_400_not_500():
+    """Final-review finding (Important): a JSON array body must not crash with an
+    AttributeError from calling .get() on a list."""
+    content, status_code = routes.handle_create_subscription(["not", "a", "dict"])
+
+    assert status_code == 400
+    assert content["resourceType"] == "OperationOutcome"
+
+
+def test_null_channel_is_rejected_with_400_not_500():
+    """Final-review finding (Important): body.get("channel", {}) does NOT fall back to {}
+    when the key is present with value None - only when the key is absent."""
+    content, status_code = routes.handle_create_subscription({
+        "criteria": "Flag?subject=Location/penns-landing",
+        "channel": None,
+    })
+
+    assert status_code == 400
+    assert content["resourceType"] == "OperationOutcome"
+
+
+def test_invalid_json_body_returns_400_not_500(monkeypatch, tmp_path):
+    """Final-review finding (Important): request.json() raises on non-JSON content -
+    the route itself (not just handle_create_subscription) must catch that.
+
+    Uses fastapi.testclient.TestClient, not httpx.Client(transport=httpx.ASGITransport(...))
+    - the latter only implements handle_async_request and cannot be used from a
+    synchronous client (see this plan's Task 7 ledger ruling for the same finding).
+    """
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setattr(store, "DB_PATH", tmp_path / "test.db")
+    store.init_db(db_path=tmp_path / "test.db")
+
+    app = FastAPI()
+    app.include_router(routes.router)
+    client = TestClient(app)
+
+    response = client.post(
+        "/fhir/Subscription", content=b"not json", headers={"Content-Type": "application/json"}
+    )
+
+    assert response.status_code == 400
+    assert response.json()["resourceType"] == "OperationOutcome"

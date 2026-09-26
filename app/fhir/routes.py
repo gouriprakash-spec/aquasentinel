@@ -9,6 +9,7 @@ does not mandate a handshake structure (see the spec's Honesty notes).
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import datetime, timezone
 
@@ -54,8 +55,15 @@ def _attempt_handshake(
 
 def handle_create_subscription(body: dict, client: httpx.Client | None = None) -> tuple[dict, int]:
     """The testable business logic behind POST /fhir/Subscription. Returns (content, status_code)."""
+    if not isinstance(body, dict):
+        return _operation_outcome("Request body must be a JSON object."), 400
+
     criteria = body.get("criteria")
-    channel = body.get("channel", {})
+    # body.get("channel", {}) would NOT fall back to {} when "channel" is present with
+    # value None (the default only applies when the key is absent) - so validate the
+    # actual value's type instead of trusting .get()'s default.
+    channel = body.get("channel")
+    channel = channel if isinstance(channel, dict) else {}
     channel_type = channel.get("type")
     channel_endpoint = channel.get("endpoint")
 
@@ -93,6 +101,16 @@ def handle_create_subscription(body: dict, client: httpx.Client | None = None) -
 
 @router.post("/fhir/Subscription")
 async def create_subscription(request: Request) -> JSONResponse:
-    body = await request.json()
-    content, status_code = handle_create_subscription(body)
+    try:
+        body = await request.json()
+    except ValueError:
+        return JSONResponse(
+            status_code=400, content=_operation_outcome("Request body is not valid JSON.")
+        )
+    # Final-review finding: handle_create_subscription makes a blocking httpx call (the
+    # handshake, up to a 10s timeout) - running it inline in this async handler would
+    # stall AquaSentinel's whole event loop, including the dashboard, for that long.
+    # asyncio.to_thread runs it in a worker thread instead; handle_create_subscription
+    # itself is unchanged and every existing test still calls it directly, synchronously.
+    content, status_code = await asyncio.to_thread(handle_create_subscription, body)
     return JSONResponse(status_code=status_code, content=content)

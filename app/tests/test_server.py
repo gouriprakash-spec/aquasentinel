@@ -7,6 +7,8 @@ test_pull_reading.py and the manual live check already run for milestone 2.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from fastapi.testclient import TestClient
 
 from app import db, server
@@ -119,7 +121,12 @@ def test_index_serves_the_dashboard_html():
 
 
 def test_pull_reading_endpoint_succeeds_even_if_fhir_delivery_fails(monkeypatch, tmp_path):
-    monkeypatch.setattr(server, "pull_reading", lambda: _fake_reading("Unsafe"))
+    # A fresh reading time, not the shared fixture's fixed past timestamp - gating's
+    # freshness check would otherwise make this reading "unavailable" (agency_event=None),
+    # so emit_event would return before ever attempting delivery, proving nothing.
+    fresh_reading = _fake_reading("Unsafe")
+    fresh_reading["time"] = datetime.now(timezone.utc).isoformat()
+    monkeypatch.setattr(server, "pull_reading", lambda: fresh_reading)
     client = _client(monkeypatch, tmp_path)
 
     # A real active Subscription pointing at an address that will genuinely fail to
@@ -136,3 +143,7 @@ def test_pull_reading_endpoint_succeeds_even_if_fhir_delivery_fails(monkeypatch,
 
     assert response.status_code == 200
     assert response.json()["risk_tier"] == "Unsafe"
+    # Final-review finding (Important): confirms emit_event actually reached the delivery
+    # attempt (not a no-op from a stale/no-event gating decision) - the Flag was recorded
+    # locally even though delivery to the unreachable endpoint failed.
+    assert fhir_store.get_open_flag("penns_landing", db_path=tmp_path / "test.db") is not None

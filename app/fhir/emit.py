@@ -36,9 +36,19 @@ def _emit_event(reading: dict, decision: dict, client: httpx.Client | None = Non
     now = datetime.now(timezone.utc).isoformat()
 
     if decision["agency_event"] == "unsafe_onset":
-        flag_id = str(uuid.uuid4())
-        store.create_flag(flag_id, location, "active", reading["time"])
-        flag = resources.build_flag(flag_id, reading["risk_tier"], "active", reading["time"], None)
+        # Reuse an already-open Flag if one exists rather than creating a second one -
+        # closes a race where two near-simultaneous pulls (FastAPI's threadpool, no
+        # transaction around gating's read-then-write) could both compute unsafe_onset
+        # for the same location.
+        existing_flag = store.get_open_flag(location)
+        if existing_flag is not None:
+            flag_id = existing_flag["id"]
+            period_start = existing_flag["period_start"]
+        else:
+            flag_id = str(uuid.uuid4())
+            period_start = reading["time"]
+            store.create_flag(flag_id, location, "active", period_start)
+        flag = resources.build_flag(flag_id, reading["risk_tier"], "active", period_start, None)
     else:  # "all_clear"
         open_flag = store.get_open_flag(location)
         if open_flag is None:
@@ -60,7 +70,8 @@ def _emit_event(reading: dict, decision: dict, client: httpx.Client | None = Non
     owns_client = client is None
     client = client or httpx.Client(timeout=10.0)
     try:
-        client.post(subscription["channel_endpoint"], json=bundle)
+        response = client.post(subscription["channel_endpoint"], json=bundle)
+        response.raise_for_status()
     finally:
         if owns_client:
             client.close()

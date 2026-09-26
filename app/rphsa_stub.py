@@ -10,6 +10,7 @@ Run: ./venv/bin/uvicorn app.rphsa_stub:app --port 8001 --reload
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -92,13 +93,43 @@ def register_with_aquasentinel(client: httpx.Client | None = None) -> dict:
             client.close()
 
 
+async def _register_with_retry(max_attempts: int = 5, delay_seconds: float = 1.0) -> None:
+    """Retries registration with backoff rather than a single attempt.
+
+    Final-review finding (Critical): uvicorn runs the ASGI lifespan's startup before it
+    begins accepting connections, so a single registration attempt made from inside
+    lifespan can race RPHSA's own readiness to receive the handshake callback - this was
+    observed to fail in practice, not just in theory, in every startup order tried
+    manually. A bounded retry with backoff is standard practice for this kind of
+    startup-ordering problem and doesn't depend on guessing the exact timing.
+    """
+    for attempt in range(1, max_attempts + 1):
+        try:
+            result = await asyncio.to_thread(register_with_aquasentinel)
+            if result.get("status") == "active":
+                logger.info("Registered with AquaSentinel on attempt %d: status=active", attempt)
+                return
+            logger.warning(
+                "AquaSentinel Subscription registration returned status=%s (attempt %d/%d)",
+                result.get("status"), attempt, max_attempts,
+            )
+        except httpx.HTTPError as exc:
+            logger.warning(
+                "Could not reach AquaSentinel to register (attempt %d/%d): %s",
+                attempt, max_attempts, exc,
+            )
+        if attempt < max_attempts:
+            await asyncio.sleep(delay_seconds)
+    logger.error("Gave up registering with AquaSentinel after %d attempts", max_attempts)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
-    try:
-        register_with_aquasentinel()
-    except httpx.HTTPError:
-        logger.warning("Could not register with AquaSentinel at startup (is it running?)")
+    # Scheduled, not awaited: RPHSA's own startup must not block on reaching
+    # AquaSentinel, and by the time this task actually runs, RPHSA is far more likely to
+    # already be accepting connections for the handshake AquaSentinel calls back with.
+    asyncio.create_task(_register_with_retry())
     yield
 
 
