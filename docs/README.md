@@ -5,7 +5,7 @@ Everything a builder needs, in one place. Paths below are relative to the repo r
 | File | What it is | Use it for |
 |---|---|---|
 | `docs/product-brief.md` | What AquaSentinel is and why: problem, architecture, both pillars, scope, demo, risks | Understanding intent and scope |
-| `docs/landing-page/BUILD-SPEC.md` | Build instructions for the dashboard: data sources and endpoints, alert rules, subscribe backend, Subscription Agent rules, agent-ready layer (MCP, `llms.txt`, JSON-LD) | What to build and how |
+| `docs/landing-page/BUILD-SPEC.md` | Build instructions for the dashboard: data sources and endpoints, alert rules, agent-ready layer (MCP, `llms.txt`, JSON-LD) | What to build and how |
 | `docs/landing-page/index.html` | Reference implementation of the dashboard (plain HTML/CSS/JS); two behaviors mocked and marked `TODO(real)` | Look, layout, and where real code plugs in |
 | `docs/alert-rules-decisions.md` | The five alerting decisions and their reasons | The exact rule values |
 | `docs/images/` | Maps: RiverCast coverage, the uncovered corridor, the Penn's Landing gauge setup | Context |

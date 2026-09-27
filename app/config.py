@@ -12,8 +12,9 @@ GEOMEAN_THRESHOLD_CFU_100ML = 126  # EPA 30-day geometric-mean anchor. Context o
 # --- Alert gating (docs/alert-rules-decisions.md, decisions 2-5) ---
 FRESHNESS_LIMIT_HOURS = 2  # Gauge reading older than this -> "status unavailable".
 ALL_CLEAR_WINDOW_HOURS = 48  # Continuous hours of Safe required before an all-clear fires.
-RECREATION_SEASON_START = (5, 1)  # (month, day) - public WhatsApp messages start.
-RECREATION_SEASON_END = (10, 31)  # (month, day) - public WhatsApp messages stop.
+RECREATION_SEASON_START = (5, 1)  # (month, day) - season boundary for the public_event field
+RECREATION_SEASON_END = (10, 31)  # app/alerts/gating.py still computes (currently unused - no
+# direct-to-public alerting exists, see plan.md's scope decision 2026-09-26 and Open Questions).
 # Agency (RPHSA) FHIR Flag delivery is year-round - no season gate for it.
 
 # --- Rules fallback (derived from AquaSentinel-dataset, not invented) ---

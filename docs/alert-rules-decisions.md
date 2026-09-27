@@ -14,6 +14,11 @@ Decisions made one at a time on Sep 23, 2026, and applied to `docs/product-brief
 ## 2. Off-season → agency always, public paused
 - Decision: RPHSA receives every FHIR Flag change (active and inactive) year-round. Only public
   WhatsApp messages are paused outside recreation season. The dashboard updates year-round.
+- **Superseded 2026-09-26:** public WhatsApp alerts were cut entirely (see `plan.md`'s Overview) —
+  deciding to alert citizens about a public-health risk is the agency's jurisdiction, not this
+  prototype's to claim without its buy-in. What survives from this decision: RPHSA still receives
+  every FHIR Flag change year-round (that part was never seasonal to begin with), and the
+  dashboard still updates year-round, unaffected either way.
 
 ## 3. All-clear waiting window → 48 hours
 - Decision: after an Unsafe period, the all-clear (FHIR Flag inactive, public all-clear message)
@@ -31,7 +36,11 @@ Decisions made one at a time on Sep 23, 2026, and applied to `docs/product-brief
   only the agency is notified (decision 2).
 - Basis: our own choice, to cover fall kayaking and rowing. Pennsylvania's rule (25 Pa. Code 93.7)
   defines the swimming season as May 1 to September 30; state October as an AquaSentinel choice,
-  not a regulatory season. This also keeps a live demo during judging (Oct 1-15) in season.
+  not a regulatory season. This also keeps a live demo during judging (Oct 5-15) in season.
+- **Superseded 2026-09-26:** moot — there is no public alert channel left to season-gate (see
+  decision 2's supersession). `app/alerts/gating.py` still computes a season-gated `public_event`
+  field internally (harmless, unused — see `plan.md`'s Open Questions), so this decision's May 1 -
+  Oct 31 dates remain accurate to what the code does, just not to anything that acts on it.
 
 ## Still open (to be derived, not decided)
 - Low-confidence cutoff: set from the trained model's validation results.

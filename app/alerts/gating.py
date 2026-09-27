@@ -2,9 +2,12 @@
 
 Per CLAUDE.md's non-negotiable architecture rule - "Code decides, agents don't" - this module
 contains no model calls and no LLM calls. It takes one scored reading (the same dict shape
-app.scoring.pull_reading.pull_reading() returns) and decides whether that reading changes what
-the agency or the public should be told. It does not send anything; milestones 4 (FHIR) and 5
-(WhatsApp) are the only things that will ever act on this decision.
+app.scoring.pull_reading.pull_reading() returns) and decides whether that reading changes the
+agency's status. It does not send anything; milestone 4 (FHIR, app/fhir/emit.py) is the only
+thing that acts on the `agency_event` this produces. It also still computes a `public_event`
+field (season-gated separately) with no consumer - no direct-to-public alerting exists, per the
+2026-09-26 scope decision in plan.md's Overview; see plan.md's Open Questions for why that field
+wasn't deleted outright.
 
 Rules (docs/alert-rules-decisions.md), all fail-closed:
 1. Freshness (config.FRESHNESS_LIMIT_HOURS) - a stale reading produces "unavailable", never an

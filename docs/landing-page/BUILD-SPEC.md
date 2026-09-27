@@ -11,10 +11,11 @@ in the JS. This document says what to build for real.
 - `BUILD-SPEC.md` — this file.
 
 ## What the page is
-A single-reach monitoring + public-subscribe page for the Center City tidal Delaware.
-Sections top to bottom: hero (logo + statement + a real Leaflet map), a subscribe strip,
-a "Live readings" toolbar with a **Pull latest reading** button, a latest-status banner,
-and a readings table.
+A single-reach monitoring page for the Center City tidal Delaware — pull-based, public, the
+same for anyone who visits (no alerting, no personalization; see `docs/product-brief.md`'s
+"No direct-to-public alerting, by design"). Sections top to bottom: hero (logo + statement +
+a real Leaflet map), a "Live readings" toolbar with a **Pull latest reading** button, a
+latest-status banner, and a readings table.
 
 ## Data lineage (get this right — it is the credibility of the whole thing)
 - **Proxies come from ONE USGS gauge: Penn's Landing, site `01467200`.** It streams
@@ -85,46 +86,13 @@ Replace the mocked `scoreReading()` in `index.html`.
   `dissolved_oxygen_mgl`, `ph`, `precip_mm`, `precip_prev_24h_mm`, `precip_prev_48h_mm`,
   `turbidity_fnu_mean`, `turbidity_fnu_max`. See `app/model/train.py`.
 
-## TODO 2 — real `subscribe()`
-The design canvas and this static page cannot send a message. Build a tiny backend:
-1. Add a phone-number input (E.164) to the subscribe strip. Validate it.
-2. `POST /api/subscribe { phone }` to a small server (Node/Express or Python/FastAPI).
-3. The server calls the **Meta WhatsApp Cloud API** with your test-number token and an
-   **approved message template** to send the confirmation. Demo can use the free test
-   number (up to ~5 pre-registered tester phones) — the same API a real agency would use.
-   `POST https://graph.facebook.com/v20.0/<PHONE_NUMBER_ID>/messages`
-   with `Authorization: Bearer <ACCESS_TOKEN>` and a `template` message body.
-4. Only flip the UI to "Subscribed" on a 2xx. Never put the token in client-side code —
-   it lives on the server only.
-5. Store opt-ins (phone + reach + timestamp) so alerts can be broadcast on status change.
-6. **Plain-language path (Subscription Agent).** Add a text box ("Tell us what you want to be
-   warned about") and accept the same over inbound WhatsApp. The agent parses the request into
-   `{ phone, location_id, window_start, window_end, alert_on: [unsafe|all_clear|rain_heads_up], activity }`,
-   resolving places only via the MCP tool `list_monitored_locations`. Rules:
-   - Unmonitored place -> decline plainly and link to the covering source; never approximate.
-   - Ambiguous -> ask one clarifying question.
-   - Read the subscription back; save only on an explicit "YES".
-   - Deterministic validator before storing: E.164, known location_id, window valid, max
-     duration (e.g. 30 days).
-   - "STOP" is handled by code, not the agent, and deletes the subscription immediately.
-   - "Is it safe today?" -> `get_current_status` rendered through a fixed template; the agent
-     never describes risk in its own words. `activity` words the message only; it never
-     changes the 235 threshold.
-   - Store the structured subscription, not the free-text request.
-   - Broadcast selects subscriptions whose location and window match the change of state.
-7. **WhatsApp checks (Sep 23, 2026).** Inbound messages to the Meta test number do reach your
-   webhook (per community tutorials; Meta's webhook page does not address test numbers
-   explicitly), but only from the up-to-5 pre-registered recipient numbers. The webhook needs
-   HTTPS with a valid, not self-signed, certificate and must answer Meta's verification request.
-   Verify early, not yet confirmed: (a) how long the temporary access token lasts (a system-user
-   token avoids expiry mid-demo); (b) that an alert sent days after the subscription, outside
-   the 24h reply window, needs an approved message template, and how long approval takes.
-
-### Alerting / OpenClaw note
-Broadcast is a separate, gated job, not part of subscribe. The broadcaster (OpenClaw in
-the demo) is a **sandboxed sender only**: it reads an already-decided Unsafe signal and
-sends. It must NOT decide the tier, touch the FHIR/health path, or hold real agency
-credentials. Gating stays deterministic and outside the agent.
+### No public alerting (scope decision, 2026-09-26)
+An earlier version of this spec had a "TODO 2 — real `subscribe()`" here: a phone-number
+opt-in, a Subscription Agent parsing plain-language alert requests, and a WhatsApp broadcaster
+(OpenClaw) sending confirmed subscribers a message on status change. That's cut, deliberately,
+not for time — see `docs/product-brief.md`'s "No direct-to-public alerting, by design." FHIR
+delivery to RPHSA (below) is the only notification channel that exists, agency-first and
+year-round. The dashboard stays exactly as described above: pull-based, public, unpersonalized.
 
 ### Alert rules (decided Sep 23, 2026; see `docs/alert-rules-decisions.md`)
 - **Two levels only:** Safe / Unsafe at 235 CFU/100 mL. No Caution level.
@@ -134,12 +102,12 @@ credentials. Gating stays deterministic and outside the agent.
   never an all-clear. Rainfall-only fallback may still run.
 - **Change of state only:** alert when the level differs from the last alerted state.
 - **All-clear:** only after **48 continuous hours** of Safe; any Unsafe reading restarts the clock.
-- **Agency vs public:** FHIR Flag changes go to RPHSA **year-round**. Public WhatsApp messages go
-  out only **May 1 - Oct 31** and only to subscriptions whose location and window match.
+- **Agency delivery:** FHIR Flag changes go to RPHSA **year-round** — the only notification
+  channel that exists (no public alerting; see the section above).
 - **Still to derive:** low-confidence cutoff (from model validation), forecast rain threshold T
   (from our rainfall data), CSO outfall set near Penn's Landing (research).
 
-## TODO 3 — make the site agent-ready
+## TODO 2 — make the site agent-ready
 AquaSentinel should be a site agents can read reliably. Every surface below is generated from
 the **same scoring output** as the banner and table; never compute status twice.
 
@@ -151,8 +119,8 @@ the **same scoring output** as the banner and table; never compute status twice.
    - `list_monitored_locations()` -> locations with id, name, coordinates, gauge id.
    - `get_current_status(location_id)` -> the same object as `/api/status`.
    - `get_recent_readings(location_id, limit)` -> recent scored rows.
-   **No write tools.** Agents must not be able to subscribe numbers, trigger alerts, or change
-   anything. Tool descriptions carry the honesty language ("estimate", "flag elevated risk").
+   **No write tools.** Agents must not be able to trigger alerts or change anything. Tool
+   descriptions carry the honesty language ("estimate", "flag elevated risk").
 3. **`/llms.txt`** — Markdown per llmstxt.org: H1 "AquaSentinel", a one-paragraph summary,
    then links to the MCP endpoint, `/api/status`, a methodology page (data lineage, EPA
    threshold, two-regime caveat), and the honesty statement.
@@ -170,8 +138,6 @@ source's MCP server, then a structured feed advertised in `llms.txt`, then the H
 
 ## Honesty guardrails (keep these in the copy)
 - Label predictions as estimates; language is "flag elevated risk," never "predict illness."
-- Label the WhatsApp last mile as operated by a public-health agency in production; the demo
-  simulates it.
 - The hero map (updated 2026-09-25) is a real Leaflet.js map with real coordinates for the
   USGS gauge and the two DRBC label stations, pulled live from the USGS site service and the
   EPA Water Quality Portal station service - not estimated. It is no longer schematic, so the
@@ -179,8 +145,7 @@ source's MCP server, then a structured feed advertised in `llms.txt`, then the H
   (Esri World Street Map, per that service's attribution requirement).
 
 ## Suggested stack
-(Agent-ready layer: the MCP server and `/llms.txt` run on the same thin API server; see TODO 3.)
-Static front-end (this file, or port to React) + a thin API server for subscribe/alerts +
-a scheduled job that pulls USGS/NOAA, scores, and (on change of state) triggers the
-broadcaster. Emit the standards layer (FHIR Observation + Flag) from the scoring job, per
-the separate FHIR notes.
+(Agent-ready layer: the MCP server and `/llms.txt` run on the same thin API server; see TODO 2.)
+Static front-end (this file, or port to React) + a thin API server (`/api/status`, MCP) +
+a scheduled job that pulls USGS/NOAA, scores, and (on change of state) delivers FHIR to RPHSA.
+See `docs/superpowers/specs/2026-09-26-fhir-milestone4-design.md` for the FHIR delivery design.

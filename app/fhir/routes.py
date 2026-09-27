@@ -5,11 +5,18 @@ topic (Flag changes for Location/penns-landing) - any other criteria or channel 
 rejected before anything is persisted. The handshake is our own webhook-verification
 convention (a plain confirmation POST), not a formally-specified R4 payload - base FHIR R4
 does not mandate a handshake structure (see the spec's Honesty notes).
+
+Endpoint allowlist added 2026-09-27 (closes a finding deferred in the Milestone 4 final
+review, I3): channel.endpoint must match the one configured RPHSA_BASE_URL. Without this,
+any caller that could reach AquaSentinel could register its own endpoint and redirect where
+RPHSA's FHIR deliveries go. Deferred at the time because no production deploy existed or was
+planned; no longer true once this runs on a real public URL.
 """
 
 from __future__ import annotations
 
 import asyncio
+import os
 import uuid
 from datetime import datetime, timezone
 
@@ -21,6 +28,7 @@ from app.fhir import store
 
 SUPPORTED_CRITERIA = "Flag?subject=Location/penns-landing"
 SUPPORTED_CHANNEL_TYPE = "rest-hook"
+RPHSA_BASE_URL = os.environ.get("RPHSA_BASE_URL", "http://localhost:8001")
 
 router = APIRouter()
 
@@ -75,6 +83,13 @@ def handle_create_subscription(body: dict, client: httpx.Client | None = None) -
         return _operation_outcome(
             "Unsupported channel. AquaSentinel only supports channel.type="
             f"'{SUPPORTED_CHANNEL_TYPE}' with a channel.endpoint."
+        ), 400
+
+    expected_endpoint = f"{RPHSA_BASE_URL}/rphsa/notifications"
+    if channel_endpoint != expected_endpoint:
+        return _operation_outcome(
+            f"Unrecognized channel.endpoint. AquaSentinel only accepts the configured RPHSA "
+            f"endpoint: {expected_endpoint}"
         ), 400
 
     existing = store.get_subscription_by_criteria_and_endpoint(criteria, channel_endpoint)

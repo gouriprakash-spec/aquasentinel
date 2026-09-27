@@ -1,25 +1,32 @@
 # Plan — AquaSentinel
 
 *Source of truth: `docs/`. See `PRD.md` for what we are building and why; this file is how and in
-what order. Build window closes Sep 30, 2026; judging Oct 1–15.*
+what order. Build window closes Oct 4, 2026 (extended from the original Sep 30); judging Oct 5–15.*
 
 ## Overview
 AquaSentinel is a virtual (soft) water-quality sensor for the Center City tidal Delaware — the
 reach Philadelphia's existing RiverCast advisory cannot see. Because an E. coli lab culture takes
 18–24 hours, we estimate present-day risk from real-time proxies (rainfall and antecedent rain,
 turbidity, specific conductance, temperature, dissolved oxygen) and classify it Safe or Unsafe
-against EPA's 235 CFU/100 mL single-sample limit. One scoring output feeds four surfaces: the
-dashboard banner, `/api/status`, a read-only MCP server, and FHIR resources sent to a stubbed
-health agency. A Subscription Agent turns plain-language requests ("warn me if it's unsafe to
-kayak near Penn's Landing this weekend") into confirmed, validated subscriptions, and a Sampling
-Coordinator Agent requests confirmatory samples where the model is unsure. The governing rule
-throughout: **agents read and draft, deterministic code decides.**
+against EPA's 235 CFU/100 mL single-sample limit. One scoring output feeds three surfaces: the
+dashboard banner, `/api/status` plus a read-only MCP server, and FHIR resources sent to a stubbed
+health agency. A Sampling Coordinator Agent requests confirmatory samples where the model is
+unsure. The governing rule throughout: **agents read and draft, deterministic code decides.**
 
 Now, because the data exist and are joined (330 labeled samples, built and reproducible in
-`AquaSentinel-dataset/`), and because the hackathon build window closes Sep 30, 2026.
+`AquaSentinel-dataset/`), and because the hackathon build window closes Oct 4, 2026.
+
+**Scope decision (2026-09-26): no direct-to-public alerting.** The original plan included a
+Subscription Agent and WhatsApp alerts (public push notifications). That's cut, deliberately, not
+for time: deciding to alert citizens about a public-health risk, and actually doing it, is the
+public health agency's jurisdiction, not a hackathon prototype's to claim unilaterally without the
+agency's buy-in. This is the same principle Milestone 4 already follows — FHIR delivery goes to
+RPHSA first and always, year-round; the agency has the authority over what happens next, AquaSentinel
+doesn't. The public dashboard stays exactly as it is (pull-based, anyone can already look it up);
+what's gone is AquaSentinel proactively pushing interpreted health-risk messages to individuals.
 
 ## Milestones
-Build top to bottom. If behind on Sep 27, **cut from the bottom, never the middle.**
+Build top to bottom. If behind on Oct 1, **cut from the bottom, never the middle.**
 
 1. **Model trained and honestly validated. DONE 2026-09-25.** Tree ensemble (random forest) plus
    an MLR baseline plus a rules fallback. The dataset's two regimes (pre-2021 without turbidity,
@@ -52,21 +59,15 @@ Build top to bottom. If behind on Sep 27, **cut from the bottom, never the middl
    stub, with real Subscription mechanics (criteria, channel, handshake) - see
    `docs/superpowers/specs/2026-09-26-fhir-milestone4-design.md` for the full design. Done when
    a tier change produces a valid Flag at the stub endpoint, year-round.
-5. **WhatsApp alerts.** OpenClaw broadcasts an already-decided signal to matching subscriptions
-   on Meta's Cloud API test number, with source attribution. Done when a change of state reaches
-   a pre-registered test phone and no other.
-6. **Subscription Agent** (the differentiator). Plain-language request → place resolved via MCP →
-   read-back → "YES" → deterministic validation → stored. Done when an unmonitored place is
-   declined with a link and "STOP" deletes immediately via code.
-7. **Agent-ready layer** (cheap and worth it). `/api/status`, the read-only MCP server,
-   `/llms.txt`, JSON-LD. Done when the consistency test passes — MCP, `/api/status`, and the
-   banner agree on tier and timestamp for one reading.
-8. **Sampling Coordinator, one scripted turn** (show, don't fully build). Low-confidence signal →
-   drafted agency request → held-out DRBC result → label gate → retrain. Done when the turn runs
-   end to end in the demo, with no claim of a measured accuracy gain.
-9. **Stretch, cut first.** CSO overflow rule (CSOcast access unverified) and the forecast rain
+5. **Agent-ready layer** (one of three co-equal contributions — see `docs/product-brief.md`).
+   `/api/status`, the read-only MCP server, `/llms.txt`, JSON-LD. Done when the consistency test
+   passes — MCP, `/api/status`, and the banner agree on tier and timestamp for one reading.
+6. **Sampling Coordinator, one scripted turn** (a second co-equal contribution). Low-confidence
+   signal → drafted agency request → held-out DRBC result → label gate → retrain. Done when the
+   turn runs end to end in the demo, with no claim of a measured accuracy gain.
+7. **Stretch, cut first.** CSO overflow rule (CSOcast access unverified) and the forecast rain
    heads-up (threshold T not yet derived).
-10. **Sep 29–30 — reserved.** Demo video, public repo, submission text. Not build time.
+8. **Oct 3–4 — reserved.** Demo video, public repo, submission text. Not build time.
 
 ## Technical Approach
 - **Architecture:** four stages — SOURCES → READ → DECIDE → ACT. Agents sit only in READ (and in
@@ -80,19 +81,14 @@ Build top to bottom. If behind on Sep 27, **cut from the bottom, never the middl
     emits one scoring output.
   - *Validator + gating* (deterministic): schema, tier values, freshness, evidence check; then
     change of state, all-clear window, season, and recipient matching. Fails closed.
-  - *Thin API server* (FastAPI): serves the static dashboard, `/api/status`, `/api/subscribe`,
-    `/llms.txt`, and hosts the read-only MCP server.
-  - *Subscription store* (SQLite): phone, location, window, alert-on. Structured only — never the
-    free-text request.
-  - *Subscription Agent*: parse, resolve via MCP, read back. Decides nothing.
-  - *Broadcaster (OpenClaw)*: sandboxed sender. No health data, no FHIR path, no agency creds.
+  - *Thin API server* (FastAPI): serves the static dashboard, `/api/status`, `/llms.txt`, and
+    hosts the read-only MCP server.
   - *FHIR emitter*: Observation + Flag from the same scoring output, to the RPHSA stub.
   - *Sampling Coordinator Agent* + *label gate*: drafts and tracks; code decides what becomes a
     training label.
 - **Data flow:** USGS + NOAA → scoring job → **one** scoring output → (a) dashboard banner and
-  table, (b) `/api/status` + MCP + JSON-LD, (c) validator/gating → FHIR Flag to RPHSA and
-  WhatsApp to matching subscribers, (d) on high risk *or* low confidence → sampling request.
-  Nothing computes status twice.
+  table, (b) `/api/status` + MCP + JSON-LD, (c) validator/gating → FHIR Flag to RPHSA, (d) on high
+  risk *or* low confidence → sampling request. Nothing computes status twice.
 - **Stack:** Python 3.11, FastAPI, SQLite, scikit-learn, pandas, httpx, the official MCP Python
   SDK. Front end stays framework-free — extend `docs/landing-page/index.html`, do not rewrite it.
   Ask before installing each package.
@@ -110,8 +106,6 @@ Build top to bottom. If behind on Sep 27, **cut from the bottom, never the middl
 - **Model validation** — precision/recall on the "unsafe" class against 235 CFU/100 mL, reported
   honestly for the shipped model rather than blended across the 2021 instrument change. Done, in
   `app/tests/test_model.py`.
-- **Subscription validator** — rejects non-E.164 numbers, unknown locations, invalid or
-  over-length windows; "STOP" deletes; nothing is stored without an explicit "YES".
 - **MCP read-only** — assert no write tool is exposed.
 - **USGS parsing** — a fixture with multiple `values` blocks (including an empty `values[0]`)
   parses to the barge-block reading.
@@ -123,13 +117,9 @@ Build top to bottom. If behind on Sep 27, **cut from the bottom, never the middl
   rules fallback; report classification metrics; frame as a transferable proof-of-concept, not a
   production model. The pre-2021 model (30 unsafe rows) was evaluated and dropped as not good
   enough to ship (see milestone 1) rather than kept to look more thorough than it was.
-- WhatsApp token expiry or template approval delay → verify both in milestone 5, early; prefer a
-  system-user token; if templates block alerts, demo the send path with the reply-window message.
-- CSOcast unusable (access, cadence, or terms) → it is milestone 9 and cut first; rainfall-only
+- CSOcast unusable (access, cadence, or terms) → it is milestone 7 and cut first; rainfall-only
   fallback stands.
-- Agent misparses a subscription → read-back + "YES" + deterministic validator; decline
-  unmonitored places rather than approximate.
-- Scope overrun near Sep 27 → cut from the bottom of the milestone list only. Sep 29–30 stay
+- Scope overrun near Oct 1 → cut from the bottom of the milestone list only. Oct 3–4 stay
   reserved for submission.
 - Bad lab result entering training → deterministic label gate; the agent cannot write labels.
 - Overclaiming → claim the design and one simulated loop turn, never a proven accuracy gain.
@@ -137,25 +127,28 @@ Build top to bottom. If behind on Sep 27, **cut from the bottom, never the middl
 ## Rollout
 - No production deploy. This is a hackathon prototype: the app runs locally (or on one small
   host) with a stubbed RPHSA FHIR endpoint and a stubbed agency sampling inbox.
-- WhatsApp runs on Meta's Cloud API **test number**, inbound limited to up to 5 pre-registered
-  phones — which fits the demo. No real member of the public is messaged. Requires an HTTPS
-  webhook with a valid (not self-signed) certificate.
+- No direct-to-public alerting exists or is planned (see the Overview's scope decision) — nothing
+  to roll out on that front.
 - The repo is made **public** at submission: no tokens, phone numbers, or personal contact
   details in any committed file. Credentials live only in `.env` on the server side.
-- Delivery is the 3–5 minute demo video plus the public repo and submission text, Sep 29–30.
+- Delivery is the 3–5 minute demo video plus the public repo and submission text, Oct 3–4.
 
 ## Open Questions
 - No server-side scheduled job exists yet. Milestone 3's gating logic is triggered only by
   the dashboard (on open, on click, and hourly while the tab stays open) - if nobody has the
   page open, no reading is pulled and no alert state updates, so a real Unsafe change or a
   pending all-clear could go unnoticed. This is fine for development/demo but must be replaced
-  by a real scheduled job (plan.md's "Ingestion + scoring job (scheduled)") before milestones
-  4-5 send anything to a real agency or a real subscriber.
+  by a real scheduled job (plan.md's "Ingestion + scoring job (scheduled)") before milestone 4
+  sends anything to a real agency.
+- `app/alerts/gating.py`'s `evaluate_reading()` still computes a `public_event` field (season-gated
+  separately from `agency_event`) alongside every decision, left over from before the no-public-
+  alerting scope decision. It's inert - nothing reads it - but it's not deleted, since the M3
+  gating tests already cover it correctly and ripping it out isn't needed for anything currently
+  planned. Flagged here so it's a known, deliberate leftover, not silent dead code.
 - Run commands are not yet set up — fill in install / dev / test / lint in `CLAUDE.md` once the
   project is scaffolded.
 - `.env.example` still holds template placeholders; update it with the real variable names
-  (WhatsApp token, phone number ID, webhook verify token, model API key) before use.
-- WhatsApp token lifetime and whether out-of-window alerts need an approved template.
+  (model API key, any others) before use.
 - CSOcast: measured or modeled, update rate, machine-readable feed, reuse terms.
 - Low-confidence cutoff and forecast threshold T — both to be *derived*, not chosen.
 - Which FHIR approach: a resource library or hand-built JSON validated against the OAH IG

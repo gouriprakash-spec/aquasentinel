@@ -6,3 +6,10 @@ pytest==8.3.3
 httpx==0.27.2
 fastapi==0.115.0
 uvicorn[standard]==0.32.0
+mcp==1.30.0
+starlette==0.38.6
+# starlette is pinned explicitly (not just left as fastapi's transitive dependency) because
+# mcp's own dependencies (sse-starlette) pull in a much newer, incompatible starlette by
+# default with no upper bound - pip's resolver picks the newest available, which breaks
+# fastapi==0.115.0 (it needs starlette<0.39.0). Verified 2026-09-27: mcp 1.30.0's FastMCP
+# and streamable_http_app() work correctly against this older, explicitly-pinned starlette.

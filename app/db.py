@@ -1,7 +1,9 @@
 """SQLite persistence for scored readings and alert-gating state.
 
-Per CLAUDE.md: SQLite holds readings, subscriptions, and alert state. This module handles
-readings (milestone 2) and alert_state (milestone 3) - subscriptions come later.
+This module handles readings (milestone 2) and alert_state (milestone 3). FHIR Subscriptions
+and Flags (milestone 4, agency-side) live in their own module, app/fhir/store.py. There is no
+public-subscriber store - no direct-to-public alerting exists, per plan.md's 2026-09-26 scope
+decision.
 """
 
 from __future__ import annotations

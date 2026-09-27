@@ -12,9 +12,9 @@
   which runs app/scoring/pull_reading.py - live USGS 01467200 + NWS KPHL rainfall, scored
   by the trained model, with the Safe/Unsafe tier decided by deterministic code.
 
-  One thing is still MOCKED, marked `TODO(real)` in the JS below:
-    subscribe() -> should POST the phone to a backend that calls the Meta WhatsApp
-                   Cloud API. Currently just flips UI state.
+  No public alerting/subscribe feature exists here by design (scope decision, 2026-09-26):
+  see docs/product-brief.md's "No direct-to-public alerting, by design." This page is
+  pull-based and public - the same for anyone who visits, no personalization.
   See BUILD-SPEC.md for the real data sources, endpoints and honesty guardrails.
 -->
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -50,13 +50,9 @@
   .map .leaflet-tooltip.reach-label::before{border-right-color:var(--line);}
   .legend{display:flex;gap:18px;flex-wrap:wrap;padding:10px 20px;border-top:1px solid #EEF1F2;}
   .legend span{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--muted);}
-  /* subscribe strip */
-  .substrip{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:16px 22px;}
-  .substrip .icon{width:40px;height:40px;flex:none;border-radius:11px;background:#EAF3F6;display:flex;align-items:center;justify-content:center;}
   /* buttons */
   .btn{display:inline-flex;align-items:center;gap:9px;color:#fff;font-size:14px;font-weight:600;border:none;border-radius:11px;padding:12px 20px;cursor:pointer;font-family:inherit;background:var(--teal);}
   .btn:hover{background:#0A4A57;}
-  .btn.green{background:var(--green);}
   /* toolbar */
   .toolbar{display:flex;align-items:center;justify-content:space-between;gap:20px;}
   .toolbar .sub{font-size:13px;color:var(--muted);margin-top:3px;line-height:1.5;max-width:720px;}
@@ -123,23 +119,6 @@
         <span><span style="width:16px;height:6px;background:#E7A79E;border-radius:3px;display:inline-block;"></span>Monitored reach &middot; alert</span>
       </div>
     </div>
-  </section>
-
-  <!-- ===== subscribe strip ===== -->
-  <section class="card substrip">
-    <div style="display:flex;align-items:center;gap:14px;min-width:0;">
-      <div class="icon">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M6 9A6 6 0 0 1 18 9C18 15 21 17 21 17H3C3 17 6 15 6 9Z" stroke="#0B5563" stroke-width="1.8" stroke-linejoin="round"/><path d="M10 21H14" stroke="#0B5563" stroke-width="1.8" stroke-linecap="round"/></svg>
-      </div>
-      <div id="subText">
-        <div class="disp" style="font-size:16px;font-weight:600;">Get alerts on your phone</div>
-        <div style="font-size:13px;color:var(--muted);margin-top:2px;">Water-safety warnings for the Center City reach, pushed the moment status changes.</div>
-      </div>
-    </div>
-    <button id="subBtn" class="btn" onclick="subscribe()">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M6 9A6 6 0 0 1 18 9C18 15 21 17 21 17H3C3 17 6 15 6 9Z" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/><path d="M10 21H14" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/></svg>
-      <span id="subLabel">Subscribe to alerts</span>
-    </button>
   </section>
 
   <!-- ===== toolbar ===== -->
@@ -338,21 +317,6 @@
         btn.disabled = false;
         btn.style.opacity = 1;
       });
-  }
-
-  // ---- subscribe ----
-  var subscribed = false;
-  function subscribe(){
-    // TODO(real): POST the phone number to your backend, which calls the Meta WhatsApp
-    // Cloud API with an approved template. Only flip UI on a 200. See BUILD-SPEC.md.
-    subscribed = true;
-    document.getElementById('subLabel').textContent = "Subscribed";
-    document.getElementById('subBtn').classList.add('green');
-    document.getElementById('subText').innerHTML =
-      '<div style="display:flex;align-items:center;gap:10px;">' +
-      '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="#157F52" stroke-width="1.8"/><path d="M8 12L11 15L16 9" stroke="#157F52" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
-      '<div style="font-size:13.5px;color:#215C40;line-height:1.5;">You\'re subscribed &mdash; a confirmation alert has been sent to your registered phone ' +
-      '<strong>&bull;&bull;&bull; &bull;&bull;&bull; 4821</strong>. <span style="color:#7A8F82;">Simulated; real delivery runs through the Meta WhatsApp Cloud API.</span></div></div>';
   }
 
   // ---- render ----

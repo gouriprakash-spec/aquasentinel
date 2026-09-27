@@ -26,7 +26,9 @@ def _client_that_fails() -> httpx.Client:
     return httpx.Client(transport=httpx.MockTransport(handler))
 
 
-def _valid_body(endpoint: str = "http://rphsa/notifications") -> dict:
+def _valid_body(endpoint: str = "http://localhost:8001/rphsa/notifications") -> dict:
+    # Matches routes.RPHSA_BASE_URL's default ("http://localhost:8001") + "/rphsa/notifications" -
+    # the one endpoint AquaSentinel accepts a Subscription for, per the endpoint allowlist below.
     return {
         "resourceType": "Subscription",
         "criteria": "Flag?subject=Location/penns-landing",
@@ -48,7 +50,7 @@ def test_valid_subscription_with_successful_handshake_becomes_active(monkeypatch
 
     stored = store.get_active_subscription("Flag?subject=Location/penns-landing", db_path=tmp_path / "test.db")
     assert stored is not None
-    assert stored["channel_endpoint"] == "http://rphsa/notifications"
+    assert stored["channel_endpoint"] == "http://localhost:8001/rphsa/notifications"
 
 
 def test_failed_handshake_still_creates_resource_with_error_status(monkeypatch, tmp_path):
@@ -91,6 +93,24 @@ def test_wrong_channel_type_is_rejected(monkeypatch, tmp_path):
 
     assert status_code == 400
     assert content["resourceType"] == "OperationOutcome"
+
+
+def test_unrecognized_endpoint_is_rejected_and_nothing_is_persisted(monkeypatch, tmp_path):
+    """Deferred final-review finding (I3), fixed 2026-09-27: without this, any caller that
+    could reach AquaSentinel could register its own endpoint and redirect where RPHSA's
+    FHIR deliveries go. Restricting to the one configured RPHSA_BASE_URL closes that."""
+    monkeypatch.setattr(store, "DB_PATH", tmp_path / "test.db")
+    store.init_db(db_path=tmp_path / "test.db")
+
+    body = _valid_body(endpoint="http://attacker.example/rphsa/notifications")
+
+    content, status_code = routes.handle_create_subscription(body, client=_client_that_succeeds())
+
+    assert status_code == 400
+    assert content["resourceType"] == "OperationOutcome"
+    with store._connect(tmp_path / "test.db") as conn:
+        count = conn.execute("SELECT COUNT(*) FROM fhir_subscriptions").fetchone()[0]
+    assert count == 0
 
 
 def test_reregistering_same_criteria_and_endpoint_does_not_duplicate(monkeypatch, tmp_path):
