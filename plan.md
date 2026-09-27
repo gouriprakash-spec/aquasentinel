@@ -66,21 +66,41 @@ Build top to bottom. If behind on Oct 1, **cut from the bottom, never the middle
 6. **Advisory Reader Agent, native mode** (second of three co-equal contributions). Reads a
    source's agent-ready interface (AquaSentinel's own MCP server, as the reference native
    source) and normalizes the result with provenance, without ever remapping a source's rating
-   onto AquaSentinel's own scale. In scope, not stretch — cut from the bottom (milestone 8) first
+   onto AquaSentinel's own scale. In scope, not stretch — cut from the bottom of this list first
    if time runs short. Design spec:
    `docs/superpowers/specs/2026-09-27-advisory-reader-agent-design.md`; not yet built.
 7. **Sampling Coordinator, one scripted turn** (third of three co-equal contributions). Low-confidence
    signal → drafted agency request → held-out DRBC result → label gate → retrain. Done when the
    turn runs end to end in the demo, with no claim of a measured accuracy gain. In scope, not
    stretch.
-8. **Stretch, cut first.** CSO overflow rule (CSOcast access unverified); the forecast rain
-   heads-up (threshold T not yet derived); and, only if time allows after milestones 6 and 7 are
-   done, a WhatsApp notification to one fixed internal group (project team/stakeholders, e.g. for
-   demo purposes) on a tier change. **This is not a reopening of the "no direct-to-public
-   alerting" scope decision above** — the audience is internal only, never river users or the
-   general public, and RPHSA's FHIR delivery (milestone 4) stays the only public-health
-   notification channel. Confirmed with Gouri 2026-09-27.
-9. **Oct 3–4 — reserved.** Demo video, public repo, submission text. Not build time.
+8. **CSO overflow rule.** Forces Unsafe (and lowers confidence) when an outfall near the Center
+   City reach shows active or recent overflow. Promoted out of stretch 2026-09-27: CSOcast access
+   was verified live, not just assumed — a public ArcGIS FeatureServer backs the map
+   (`services2.arcgis.com/.../CSOCast_Layerboard/FeatureServer/0`, layer
+   `ows_csocast_outfall_status`), queryable as plain JSON/GeoJSON with no authentication;
+   `"access": "public"` on the hosting item, no restrictive license set. Per-outfall fields:
+   `Status` (0 = data not currently available, 1 = no overflow in past 72h, 3 = overflow in past
+   72h, 4 = currently overflowing), `Status_Message`, `LastPoll`, `Latitude`/`Longitude`,
+   `Waterbody`. 164 outfalls total, matching `docs/product-brief.md`'s figure; 53 tagged
+   `Waterbody='D'` (Delaware), several within ~1km of Penn's Landing. Verified live: two of those
+   (`D_52`, `D_58`) showed a real, current overflow status the same day this was checked,
+   correlating with a real rain event that day. In scope, not stretch. Not yet decided (design
+   work for this milestone, same process as milestone 6's spec): the exact nearby-outfall set
+   (tidal excursion on both sides of Penn's Landing, not only upstream — see
+   `docs/product-brief.md`), and how to fail closed per outfall when its own `LastPoll` is stale
+   (some outfalls show `Status=0` with a stale `LastPoll` from as far back as 2024 — sensor
+   coverage is uneven, so freshness must be checked per outfall, not assumed from the feed as a
+   whole, matching the same freshness pattern already applied to AquaSentinel's own USGS gauge).
+   Bonus, not required for this milestone: layer 1 of the same service
+   (`ows_csocast_raingauge_status`) is PWD's own local rain gauge network and may be a better
+   rainfall source than NWS/Open-Meteo for this rule specifically — a separate decision.
+9. **Stretch, cut first.** The forecast rain heads-up (threshold T not yet derived); and, only if
+   time allows after milestones 6, 7, and 8 are done, a WhatsApp notification to one fixed
+   internal group (project team/stakeholders, e.g. for demo purposes) on a tier change. **This is
+   not a reopening of the "no direct-to-public alerting" scope decision above** — the audience is
+   internal only, never river users or the general public, and RPHSA's FHIR delivery (milestone 4)
+   stays the only public-health notification channel. Confirmed with Gouri 2026-09-27.
+10. **Oct 3–4 — reserved.** Demo video, public repo, submission text. Not build time.
 
 ## Technical Approach
 - **Architecture:** four stages — SOURCES → READ → DECIDE → ACT. Agents sit only in READ (and in
@@ -106,7 +126,9 @@ Build top to bottom. If behind on Oct 1, **cut from the bottom, never the middle
   SDK. Front end stays framework-free — extend `docs/landing-page/index.html`, do not rewrite it.
   Ask before installing each package.
 - **Config:** all thresholds in one config module, never inline. Undecided values (low-confidence
-  cutoff, forecast threshold T, CSO outfall set) stay clearly marked placeholders.
+  cutoff, forecast threshold T, and which CSOcast outfalls count as "near" Penn's Landing) stay
+  clearly marked placeholders — CSOcast's outfall-level data itself is verified and available
+  (see milestone 8); only the specific nearby-outfall selection is still a design decision.
 
 ## Testing Plan
 - **Alert rules** — unit tests per rule: freshness (>2h → unavailable), change of state only,
@@ -130,8 +152,11 @@ Build top to bottom. If behind on Oct 1, **cut from the bottom, never the middle
   rules fallback; report classification metrics; frame as a transferable proof-of-concept, not a
   production model. The pre-2021 model (30 unsafe rows) was evaluated and dropped as not good
   enough to ship (see milestone 1) rather than kept to look more thorough than it was.
-- CSOcast unusable (access, cadence, or terms) → it is milestone 8 and cut first; rainfall-only
-  fallback stands.
+- CSOcast per-outfall coverage is uneven (some outfalls' `LastPoll` is stale by years, sensor
+  apparently offline) → fail closed per outfall on staleness, same pattern as the USGS gauge;
+  rainfall-only fallback stands if the outfalls near Penn's Landing are ever all stale or
+  unavailable. Access itself was verified live 2026-09-27 (milestone 8) — this is no longer an
+  access risk, only a per-outfall data-quality one.
 - Scope overrun near Oct 1 → cut from the bottom of the milestone list only. Oct 3–4 stay
   reserved for submission.
 - Bad lab result entering training → deterministic label gate; the agent cannot write labels.
