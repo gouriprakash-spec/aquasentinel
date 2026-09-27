@@ -59,15 +59,28 @@ Build top to bottom. If behind on Oct 1, **cut from the bottom, never the middle
    stub, with real Subscription mechanics (criteria, channel, handshake) - see
    `docs/superpowers/specs/2026-09-26-fhir-milestone4-design.md` for the full design. Done when
    a tier change produces a valid Flag at the stub endpoint, year-round.
-5. **Agent-ready layer** (one of three co-equal contributions — see `docs/product-brief.md`).
-   `/api/status`, the read-only MCP server, `/llms.txt`, JSON-LD. Done when the consistency test
-   passes — MCP, `/api/status`, and the banner agree on tier and timestamp for one reading.
-6. **Sampling Coordinator, one scripted turn** (a second co-equal contribution). Low-confidence
+5. **Agent-ready layer. DONE 2026-09-27** (first of three co-equal contributions — see
+   `docs/product-brief.md`). `/api/status`, the read-only MCP server, `/llms.txt`, JSON-LD. Done
+   when the consistency test passes — MCP, `/api/status`, and the banner agree on tier and
+   timestamp for one reading.
+6. **Advisory Reader Agent, native mode** (second of three co-equal contributions). Reads a
+   source's agent-ready interface (AquaSentinel's own MCP server, as the reference native
+   source) and normalizes the result with provenance, without ever remapping a source's rating
+   onto AquaSentinel's own scale. In scope, not stretch — cut from the bottom (milestone 8) first
+   if time runs short. Design spec:
+   `docs/superpowers/specs/2026-09-27-advisory-reader-agent-design.md`; not yet built.
+7. **Sampling Coordinator, one scripted turn** (third of three co-equal contributions). Low-confidence
    signal → drafted agency request → held-out DRBC result → label gate → retrain. Done when the
-   turn runs end to end in the demo, with no claim of a measured accuracy gain.
-7. **Stretch, cut first.** CSO overflow rule (CSOcast access unverified) and the forecast rain
-   heads-up (threshold T not yet derived).
-8. **Oct 3–4 — reserved.** Demo video, public repo, submission text. Not build time.
+   turn runs end to end in the demo, with no claim of a measured accuracy gain. In scope, not
+   stretch.
+8. **Stretch, cut first.** CSO overflow rule (CSOcast access unverified); the forecast rain
+   heads-up (threshold T not yet derived); and, only if time allows after milestones 6 and 7 are
+   done, a WhatsApp notification to one fixed internal group (project team/stakeholders, e.g. for
+   demo purposes) on a tier change. **This is not a reopening of the "no direct-to-public
+   alerting" scope decision above** — the audience is internal only, never river users or the
+   general public, and RPHSA's FHIR delivery (milestone 4) stays the only public-health
+   notification channel. Confirmed with Gouri 2026-09-27.
+9. **Oct 3–4 — reserved.** Demo video, public repo, submission text. Not build time.
 
 ## Technical Approach
 - **Architecture:** four stages — SOURCES → READ → DECIDE → ACT. Agents sit only in READ (and in
@@ -117,7 +130,7 @@ Build top to bottom. If behind on Oct 1, **cut from the bottom, never the middle
   rules fallback; report classification metrics; frame as a transferable proof-of-concept, not a
   production model. The pre-2021 model (30 unsafe rows) was evaluated and dropped as not good
   enough to ship (see milestone 1) rather than kept to look more thorough than it was.
-- CSOcast unusable (access, cadence, or terms) → it is milestone 7 and cut first; rainfall-only
+- CSOcast unusable (access, cadence, or terms) → it is milestone 8 and cut first; rainfall-only
   fallback stands.
 - Scope overrun near Oct 1 → cut from the bottom of the milestone list only. Oct 3–4 stay
   reserved for submission.
