@@ -10,6 +10,7 @@ protocol-level integration is covered in Task 6, once the server is actually mou
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timedelta, timezone
 
 from app import db
 from app import mcp_server
@@ -83,6 +84,24 @@ def test_get_current_status_empty_database_is_unavailable(monkeypatch, tmp_path)
     status = asyncio.run(mcp_server.get_current_status("penns_landing"))
 
     assert status == {"status": "unavailable", "reason": "no readings yet"}
+
+
+def test_get_current_status_fails_closed_on_a_stale_reading(monkeypatch, tmp_path):
+    """Final-review finding (Critical): get_current_status previously published the newest
+    stored row as-is, even when it was too old to trust - contradicting the gating decision
+    for that same row (CLAUDE.md's "Fail closed" rule)."""
+    monkeypatch.setattr(db, "DB_PATH", tmp_path / "test.db")
+    db.init_db()
+    stale_reading = _fake_reading("Safe")
+    stale_reading["time"] = (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat()
+    db.insert_reading(stale_reading)
+
+    status = asyncio.run(mcp_server.get_current_status("penns_landing"))
+
+    assert status == {
+        "status": "unavailable",
+        "reason": "latest reading is stale (older than the freshness limit)",
+    }
 
 
 def test_get_recent_readings_respects_limit_and_orders_newest_first(monkeypatch, tmp_path):

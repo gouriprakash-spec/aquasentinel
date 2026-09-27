@@ -19,12 +19,18 @@ from mcp.server.transport_security import TransportSecuritySettings
 from app import db
 from app.fhir.resources import LOCATION_LAT, LOCATION_LON
 from app.scoring.pull_reading import LOCATION_ID, LOCATION_NAME
-from app.status import build_status_contract
+from app.status import build_status_contract, current_status
 
 # Same USGS gauge id already embedded in pull_reading.SOURCE_URL - not a second source of
 # truth, just not currently its own named constant there.
 GAUGE_ID = "01467200"
 
+# KNOWN GAP (deliberate, tracked in this plan's Review Focus, not an oversight): this
+# allowlist only covers the test client and local dev. No real deploy host is chosen yet
+# (see plan.md's Open Questions / the deployment_target decision) - once one is, its real
+# hostname must be added to both lists below, and a line added to plan.md's Open Questions
+# noting it's done. Until then, every real MCP request against a deployed host will be
+# rejected with "Invalid Host header", which will look like a bug rather than this gap.
 mcp = FastMCP(
     "aquasentinel_mcp",
     transport_security=TransportSecuritySettings(
@@ -77,9 +83,7 @@ async def get_current_status(location_id: str) -> dict:
     if location_id != LOCATION_ID:
         return {"status": "unavailable", "reason": f"Unknown location_id: {location_id}"}
     rows = db.get_recent_readings(limit=1)
-    if not rows:
-        return {"status": "unavailable", "reason": "no readings yet"}
-    return build_status_contract(rows[0])
+    return current_status(rows[0] if rows else None)
 
 
 @mcp.tool()

@@ -10,6 +10,9 @@ rather than invented).
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
+from app import config
 from app.scoring.pull_reading import SOURCE_NAME, SOURCE_URL
 
 
@@ -36,3 +39,30 @@ def build_status_contract(row: dict) -> dict:
         },
         "kind": "model_estimate",
     }
+
+
+def current_status(row: dict | None) -> dict:
+    """The single decision point for "what is the current status" - used identically by
+    GET /api/status and the MCP server's get_current_status tool, so publishing can never
+    disagree with app.alerts.gating.evaluate_reading's decision for the same row.
+
+    Per CLAUDE.md's non-negotiable "Fail closed" rule: a gauge reading older than
+    config.FRESHNESS_LIMIT_HOURS is "status unavailable", never an all-clear - the same
+    freshness check gating applies, applied here too so a stale reading is never published
+    as current just because no fresher one has arrived yet (there is no background scheduler
+    to guarantee that; see plan.md's Open Questions).
+    """
+    if row is None:
+        return {"status": "unavailable", "reason": "no readings yet"}
+
+    reading_time = datetime.fromisoformat(row["reading_time"])
+    if reading_time.tzinfo is None:
+        reading_time = reading_time.replace(tzinfo=timezone.utc)
+
+    if datetime.now(timezone.utc) - reading_time > timedelta(hours=config.FRESHNESS_LIMIT_HOURS):
+        return {
+            "status": "unavailable",
+            "reason": "latest reading is stale (older than the freshness limit)",
+        }
+
+    return build_status_contract(row)

@@ -7,7 +7,7 @@ test_pull_reading.py and the manual live check already run for milestone 2.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi.testclient import TestClient
 
@@ -152,7 +152,13 @@ def test_pull_reading_endpoint_succeeds_even_if_fhir_delivery_fails(monkeypatch,
 
 
 def test_api_status_returns_latest_reading_contract(monkeypatch, tmp_path):
-    monkeypatch.setattr(server, "pull_reading", lambda: _fake_reading("Safe"))
+    # _fake_reading()'s default "time" is a fixed milestone-2-era timestamp, long past the
+    # freshness limit by now - override it here since this test needs a *fresh* reading, not
+    # the shared fixture's literal value (unlike the other tests below, which never route
+    # through the freshness check and so are unaffected by staleness).
+    fresh_reading = _fake_reading("Safe")
+    fresh_reading["time"] = datetime.now(timezone.utc).isoformat()
+    monkeypatch.setattr(server, "pull_reading", lambda: fresh_reading)
     client = _client(monkeypatch, tmp_path)
     client.post("/api/pull-reading")
 
@@ -181,6 +187,25 @@ def test_api_status_rejects_unknown_location(monkeypatch, tmp_path):
     response = client.get("/api/status", params={"location": "somewhere_else"})
 
     assert response.status_code == 404
+
+
+def test_api_status_fails_closed_on_a_stale_reading(monkeypatch, tmp_path):
+    """Final-review finding (Critical): /api/status previously published the newest stored
+    row as-is, even when it was too old to trust - contradicting the gating decision for
+    that same row (CLAUDE.md's "Fail closed" rule)."""
+    stale_reading = _fake_reading("Safe")
+    stale_reading["time"] = (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat()
+    monkeypatch.setattr(server, "pull_reading", lambda: stale_reading)
+    client = _client(monkeypatch, tmp_path)
+    client.post("/api/pull-reading")
+
+    response = client.get("/api/status")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "unavailable",
+        "reason": "latest reading is stale (older than the freshness limit)",
+    }
 
 
 def test_llms_txt_is_served_with_honesty_language():

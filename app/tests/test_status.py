@@ -4,7 +4,9 @@ GET /api/status and the MCP server's tools, so they can never disagree.
 
 from __future__ import annotations
 
-from app.status import build_status_contract
+from datetime import datetime, timedelta, timezone
+
+from app.status import build_status_contract, current_status
 
 
 def _row() -> dict:
@@ -63,3 +65,34 @@ def test_build_status_contract_never_includes_estimate_cfu_or_location_name():
 
     assert "estimate_cfu_100ml" not in contract
     assert "location_name" not in contract
+
+
+def test_current_status_returns_the_contract_for_a_fresh_reading():
+    row = _row()
+    row["reading_time"] = datetime.now(timezone.utc).isoformat()
+
+    result = current_status(row)
+
+    assert result["risk_tier"] == "Safe"
+    assert result["kind"] == "model_estimate"
+
+
+def test_current_status_fails_closed_on_a_stale_reading():
+    """CLAUDE.md's non-negotiable rule: a gauge reading older than the freshness limit is
+    "status unavailable", never an all-clear - this must hold for every surface that
+    publishes "current status", not just the alert-gating decision for the same row."""
+    row = _row()
+    row["reading_time"] = (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat()
+
+    result = current_status(row)
+
+    assert result == {
+        "status": "unavailable",
+        "reason": "latest reading is stale (older than the freshness limit)",
+    }
+
+
+def test_current_status_returns_unavailable_when_no_reading_exists():
+    result = current_status(None)
+
+    assert result == {"status": "unavailable", "reason": "no readings yet"}

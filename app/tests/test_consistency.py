@@ -10,6 +10,7 @@ import asyncio
 from fastapi.testclient import TestClient
 
 from app import db, mcp_server, server
+from app.fhir import store as fhir_store
 
 
 def _fake_reading(risk_tier: str = "Unsafe") -> dict:
@@ -38,9 +39,15 @@ def _fake_reading(risk_tier: str = "Unsafe") -> dict:
 
 
 def test_mcp_status_and_readings_agree_on_tier_and_timestamp(monkeypatch, tmp_path):
+    # Final-review finding (Important): this test's Unsafe reading makes /api/pull-reading
+    # gate an unsafe_onset and write a real FHIR Flag - without also isolating
+    # fhir_store's DB_PATH (only db.DB_PATH was patched here), that write landed in the
+    # real dev aquasentinel.db instead of this test's tmp_path.
     monkeypatch.setattr(db, "DB_PATH", tmp_path / "test.db")
+    monkeypatch.setattr(fhir_store, "DB_PATH", tmp_path / "test.db")
     monkeypatch.setattr(server, "pull_reading", lambda: _fake_reading("Unsafe"))
     db.init_db()
+    fhir_store.init_db()
 
     client = TestClient(server.app)
     pulled = client.post("/api/pull-reading")

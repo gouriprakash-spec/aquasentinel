@@ -26,7 +26,7 @@ from app.fhir import store as fhir_store
 from app.ingestion.nws import RainfallUnavailable
 from app.ingestion.usgs import UsgsDataUnavailable
 from app.scoring.pull_reading import LOCATION_ID, pull_reading
-from app.status import build_status_contract
+from app.status import current_status
 
 LANDING_PAGE_DIR = Path(__file__).resolve().parents[1] / "docs" / "landing-page"
 DATASET_DATE_MODIFIED_TOKEN = "__AQUASENTINEL_DATASET_DATE_MODIFIED__"
@@ -102,9 +102,7 @@ def api_status(location: str = LOCATION_ID) -> dict:
     if location != LOCATION_ID:
         raise HTTPException(status_code=404, detail=f"Unknown location: {location}")
     rows = db.get_recent_readings(limit=1)
-    if not rows:
-        return {"status": "unavailable", "reason": "no readings yet"}
-    return build_status_contract(rows[0])
+    return current_status(rows[0] if rows else None)
 
 
 # Must be the LAST route registration in this file - a route added after this would be

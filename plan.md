@@ -153,3 +153,10 @@ Build top to bottom. If behind on Oct 1, **cut from the bottom, never the middle
 - Low-confidence cutoff and forecast threshold T — both to be *derived*, not chosen.
 - Which FHIR approach: a resource library or hand-built JSON validated against the OAH IG
   profiles.
+- `app/mcp_server.py`'s `TransportSecuritySettings` allowlist only covers `testserver`/
+  `localhost:8000`/`127.0.0.1:8000` (Milestone 5) — a deliberate gap, not an oversight, since
+  no real deploy host is chosen yet (see the `deployment_target` decision). Once one is, add
+  its real hostname to both `allowed_hosts` and `allowed_origins` and update this line to say
+  it's done.
+- `docs/landing-page/llms.txt`'s `TODO_GITHUB_REPO_URL` placeholder needs the real public repo
+  URL before submission (the repo isn't public yet, so the real URL doesn't exist).
