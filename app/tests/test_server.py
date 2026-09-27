@@ -216,3 +216,49 @@ def test_index_page_json_ld_falls_back_to_server_time_when_no_readings(tmp_path,
 
     assert response.status_code == 200
     assert "__AQUASENTINEL_DATASET_DATE_MODIFIED__" not in response.text
+
+
+def test_mcp_endpoint_responds_to_initialize_and_tools_list():
+    # A plain TestClient(server.app) never runs the app's lifespan (see _client()'s own
+    # comment above) - the MCP session manager's task group only starts inside it, so this
+    # test needs the context-manager form specifically, unlike the rest of this file.
+    with TestClient(server.app) as client:
+        init_response = client.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0", "id": 1, "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-06-18", "capabilities": {},
+                    "clientInfo": {"name": "test", "version": "0.1"},
+                },
+            },
+            headers={"Accept": "application/json, text/event-stream"},
+        )
+        assert init_response.status_code == 200
+        session_id = init_response.headers["mcp-session-id"]
+
+        tools_response = client.post(
+            "/mcp",
+            json={"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+            headers={
+                "Accept": "application/json, text/event-stream",
+                "mcp-session-id": session_id,
+            },
+        )
+        assert tools_response.status_code == 200
+        assert "get_current_status" in tools_response.text
+
+
+def test_preexisting_routes_still_work_after_the_mcp_mount(monkeypatch, tmp_path):
+    """Review Focus: a route registered after app.mount("/", ...) would be silently
+    shadowed (404, no exception) - this pins every pre-existing route as a regression
+    guard against that exact failure mode being reintroduced later."""
+    monkeypatch.setattr(server, "pull_reading", lambda: _fake_reading("Safe"))
+    client = _client(monkeypatch, tmp_path)
+
+    assert client.get("/").status_code == 200
+    assert client.get("/logo.png").status_code == 200
+    assert client.get("/llms.txt").status_code == 200
+    assert client.get("/api/status").status_code == 200
+    assert client.post("/api/pull-reading").status_code == 200
+    assert client.get("/api/readings").status_code == 200

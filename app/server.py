@@ -18,6 +18,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
 
 from app import db
+from app import mcp_server
 from app.alerts.gating import evaluate_reading
 from app.fhir import emit as fhir_emit
 from app.fhir import routes as fhir_routes
@@ -35,7 +36,8 @@ DATASET_DATE_MODIFIED_TOKEN = "__AQUASENTINEL_DATASET_DATE_MODIFIED__"
 async def lifespan(app: FastAPI):
     db.init_db()
     fhir_store.init_db()
-    yield
+    async with mcp_server.mcp.session_manager.run():
+        yield
 
 
 app = FastAPI(title="AquaSentinel", lifespan=lifespan)
@@ -103,3 +105,9 @@ def api_status(location: str = LOCATION_ID) -> dict:
     if not rows:
         return {"status": "unavailable", "reason": "no readings yet"}
     return build_status_contract(rows[0])
+
+
+# Must be the LAST route registration in this file - a route added after this would be
+# silently shadowed (404, no exception raised). See this plan's Global Constraints and
+# test_preexisting_routes_still_work_after_the_mcp_mount for why.
+app.mount("/", mcp_server.mcp.streamable_http_app())
