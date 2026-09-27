@@ -63,20 +63,12 @@ Build top to bottom. If behind on Oct 1, **cut from the bottom, never the middle
    `docs/product-brief.md`). `/api/status`, the read-only MCP server, `/llms.txt`, JSON-LD. Done
    when the consistency test passes — MCP, `/api/status`, and the banner agree on tier and
    timestamp for one reading.
-6. **Advisory Reader Agent, native mode** (second of three co-equal contributions). Reads a
-   source's agent-ready interface (AquaSentinel's own MCP server, as the reference native
-   source) and normalizes the result with provenance, without ever remapping a source's rating
-   onto AquaSentinel's own scale. In scope, not stretch — cut from the bottom of this list first
-   if time runs short. Design spec:
-   `docs/superpowers/specs/2026-09-27-advisory-reader-agent-design.md`; not yet built.
-7. **Sampling Coordinator, one scripted turn** (third of three co-equal contributions). Low-confidence
-   signal → drafted agency request → held-out DRBC result → label gate → retrain. Done when the
-   turn runs end to end in the demo, with no claim of a measured accuracy gain. In scope, not
-   stretch.
-8. **CSO overflow rule.** Forces Unsafe (and lowers confidence) when an outfall near the Center
-   City reach shows active or recent overflow. Promoted out of stretch 2026-09-27: CSOcast access
-   was verified live, not just assumed — a public ArcGIS FeatureServer backs the map
-   (`services2.arcgis.com/.../CSOCast_Layerboard/FeatureServer/0`, layer
+6. **CSO overflow rule.** Forces Unsafe (and lowers confidence) when an outfall near the Center
+   City reach shows active or recent overflow. Promoted out of stretch and moved ahead of the
+   Reader Agent and Sampling Coordinator 2026-09-27 (Gouri's call — lower risk now that access is
+   verified, quicker path to a working rule than the spec→plan cycle the other two still need):
+   CSOcast access was verified live, not just assumed — a public ArcGIS FeatureServer backs the
+   map (`services2.arcgis.com/.../CSOCast_Layerboard/FeatureServer/0`, layer
    `ows_csocast_outfall_status`), queryable as plain JSON/GeoJSON with no authentication;
    `"access": "public"` on the hosting item, no restrictive license set. Per-outfall fields:
    `Status` (0 = data not currently available, 1 = no overflow in past 72h, 3 = overflow in past
@@ -85,7 +77,7 @@ Build top to bottom. If behind on Oct 1, **cut from the bottom, never the middle
    `Waterbody='D'` (Delaware), several within ~1km of Penn's Landing. Verified live: two of those
    (`D_52`, `D_58`) showed a real, current overflow status the same day this was checked,
    correlating with a real rain event that day. In scope, not stretch. Not yet decided (design
-   work for this milestone, same process as milestone 6's spec): the exact nearby-outfall set
+   work for this milestone, same process as milestone 7's spec): the exact nearby-outfall set
    (tidal excursion on both sides of Penn's Landing, not only upstream — see
    `docs/product-brief.md`), and how to fail closed per outfall when its own `LastPoll` is stale
    (some outfalls show `Status=0` with a stale `LastPoll` from as far back as 2024 — sensor
@@ -94,6 +86,16 @@ Build top to bottom. If behind on Oct 1, **cut from the bottom, never the middle
    Bonus, not required for this milestone: layer 1 of the same service
    (`ows_csocast_raingauge_status`) is PWD's own local rain gauge network and may be a better
    rainfall source than NWS/Open-Meteo for this rule specifically — a separate decision.
+7. **Advisory Reader Agent, native mode** (second of three co-equal contributions). Reads a
+   source's agent-ready interface (AquaSentinel's own MCP server, as the reference native
+   source) and normalizes the result with provenance, without ever remapping a source's rating
+   onto AquaSentinel's own scale. In scope, not stretch — cut from the bottom of this list first
+   if time runs short. Design spec:
+   `docs/superpowers/specs/2026-09-27-advisory-reader-agent-design.md`; not yet built.
+8. **Sampling Coordinator, one scripted turn** (third of three co-equal contributions). Low-confidence
+   signal → drafted agency request → held-out DRBC result → label gate → retrain. Done when the
+   turn runs end to end in the demo, with no claim of a measured accuracy gain. In scope, not
+   stretch.
 9. **Stretch, cut first.** The forecast rain heads-up (threshold T not yet derived); and, only if
    time allows after milestones 6, 7, and 8 are done, a WhatsApp notification to one fixed
    internal group (project team/stakeholders, e.g. for demo purposes) on a tier change. **This is
@@ -128,7 +130,7 @@ Build top to bottom. If behind on Oct 1, **cut from the bottom, never the middle
 - **Config:** all thresholds in one config module, never inline. Undecided values (low-confidence
   cutoff, forecast threshold T, and which CSOcast outfalls count as "near" Penn's Landing) stay
   clearly marked placeholders — CSOcast's outfall-level data itself is verified and available
-  (see milestone 8); only the specific nearby-outfall selection is still a design decision.
+  (see milestone 6); only the specific nearby-outfall selection is still a design decision.
 
 ## Testing Plan
 - **Alert rules** — unit tests per rule: freshness (>2h → unavailable), change of state only,
@@ -155,7 +157,7 @@ Build top to bottom. If behind on Oct 1, **cut from the bottom, never the middle
 - CSOcast per-outfall coverage is uneven (some outfalls' `LastPoll` is stale by years, sensor
   apparently offline) → fail closed per outfall on staleness, same pattern as the USGS gauge;
   rainfall-only fallback stands if the outfalls near Penn's Landing are ever all stale or
-  unavailable. Access itself was verified live 2026-09-27 (milestone 8) — this is no longer an
+  unavailable. Access itself was verified live 2026-09-27 (milestone 6) — this is no longer an
   access risk, only a per-outfall data-quality one.
 - Scope overrun near Oct 1 → cut from the bottom of the milestone list only. Oct 3–4 stay
   reserved for submission.
