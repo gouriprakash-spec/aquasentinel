@@ -17,6 +17,26 @@
   pull-based and public - the same for anyone who visits, no personalization.
   See BUILD-SPEC.md for the real data sources, endpoints and honesty guardrails.
 -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Dataset",
+  "name": "AquaSentinel Water-Safety Estimates — Center City Tidal Delaware",
+  "description": "Live E. coli risk estimates (Safe/Unsafe) for the Center City tidal Delaware, derived from live USGS gauge proxies and near-real-time rainfall. An estimate, not a measured bacteria value.",
+  "variableMeasured": ["risk_tier", "confidence", "water_temp_c", "sp_conductance_uscm", "dissolved_oxygen_mgl", "ph", "turbidity_fnu", "precip_mm", "precip_prev_24h_mm"],
+  "spatialCoverage": {
+    "@type": "Place",
+    "name": "Penn's Landing, Center City tidal Delaware",
+    "geo": {"@type": "GeoCoordinates", "latitude": 39.946402, "longitude": -75.139360}
+  },
+  "dateModified": "__AQUASENTINEL_DATASET_DATE_MODIFIED__",
+  "isBasedOn": [
+    "https://waterservices.usgs.gov/nwis/iv/?sites=01467200",
+    "https://api.weather.gov/stations/KPHL/observations"
+  ],
+  "creator": {"@type": "Organization", "name": "AquaSentinel"}
+}
+</script>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
 <style>

@@ -11,10 +11,11 @@ Run: ./venv/bin/uvicorn app.server:app --reload
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 
 from app import db
 from app.alerts.gating import evaluate_reading
@@ -27,6 +28,7 @@ from app.scoring.pull_reading import LOCATION_ID, pull_reading
 from app.status import build_status_contract
 
 LANDING_PAGE_DIR = Path(__file__).resolve().parents[1] / "docs" / "landing-page"
+DATASET_DATE_MODIFIED_TOKEN = "__AQUASENTINEL_DATASET_DATE_MODIFIED__"
 
 
 @asynccontextmanager
@@ -41,8 +43,12 @@ app.include_router(fhir_routes.router)
 
 
 @app.get("/")
-def index() -> FileResponse:
-    return FileResponse(LANDING_PAGE_DIR / "index.html")
+def index() -> HTMLResponse:
+    html = (LANDING_PAGE_DIR / "index.html").read_text()
+    rows = db.get_recent_readings(limit=1)
+    date_modified = rows[0]["retrieved_at"] if rows else datetime.now(timezone.utc).isoformat()
+    html = html.replace(DATASET_DATE_MODIFIED_TOKEN, date_modified)
+    return HTMLResponse(html)
 
 
 @app.get("/logo.png")

@@ -112,7 +112,9 @@ def test_readings_endpoint_respects_limit(monkeypatch, tmp_path):
     assert len(response.json()) == 2
 
 
-def test_index_serves_the_dashboard_html():
+def test_index_serves_the_dashboard_html(monkeypatch, tmp_path):
+    monkeypatch.setattr(db, "DB_PATH", tmp_path / "test.db")
+    db.init_db()
     client = TestClient(server.app)
     response = client.get("/")
 
@@ -190,3 +192,27 @@ def test_llms_txt_is_served_with_honesty_language():
     assert "AquaSentinel" in response.text
     assert "estimate" in response.text
     assert "predict illness" not in response.text.lower()
+
+
+def test_index_page_contains_substituted_json_ld(monkeypatch, tmp_path):
+    monkeypatch.setattr(server, "pull_reading", lambda: _fake_reading("Safe"))
+    client = _client(monkeypatch, tmp_path)
+    client.post("/api/pull-reading")
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert '"@type": "Dataset"' in response.text
+    assert "__AQUASENTINEL_DATASET_DATE_MODIFIED__" not in response.text
+    assert "2026-09-25T22:09:47+00:00" in response.text  # _fake_reading's retrieved_at
+
+
+def test_index_page_json_ld_falls_back_to_server_time_when_no_readings(tmp_path, monkeypatch):
+    monkeypatch.setattr(db, "DB_PATH", tmp_path / "test.db")
+    db.init_db()
+    client = TestClient(server.app)
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert "__AQUASENTINEL_DATASET_DATE_MODIFIED__" not in response.text
