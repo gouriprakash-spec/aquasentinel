@@ -1,0 +1,38 @@
+"""Shared status-contract builder - reshapes a stored reading row into the documented
+contract shape, used identically by GET /api/status and the MCP server's tools (Milestone
+5), so they can never disagree about what a reading looks like.
+
+Per docs/superpowers/specs/2026-09-27-agent-ready-layer-milestone5-design.md: deliberately
+excludes estimate_cfu_100ml (architecture rule: never show a bacteria value the system does
+not have) and location_name (not stored per-row in app/db.py's readings table - omitted
+rather than invented).
+"""
+
+from __future__ import annotations
+
+from app.scoring.pull_reading import SOURCE_NAME, SOURCE_URL
+
+
+def build_status_contract(row: dict) -> dict:
+    return {
+        "location": row["location"],
+        "time": row["reading_time"],
+        "risk_tier": row["risk_tier"],
+        "confidence": row["confidence"],
+        "source": SOURCE_NAME,
+        "source_url": SOURCE_URL,
+        "retrieved_at": row["retrieved_at"],
+        "threshold_cfu_100ml": row["threshold_cfu_100ml"],
+        "model_version": row["model_version"],
+        "regime": row["regime"],
+        "proxies": {
+            "water_temp_c": row["water_temp_c"],
+            "sp_conductance_uscm": row["sp_conductance_uscm"],
+            "dissolved_oxygen_mgl": row["dissolved_oxygen_mgl"],
+            "ph": row["ph"],
+            "turbidity_fnu": row["turbidity_fnu"],
+            "precip_mm": row["precip_mm"],
+            "precip_prev_24h_mm": row["precip_prev_24h_mm"],
+        },
+        "kind": "model_estimate",
+    }
