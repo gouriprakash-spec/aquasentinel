@@ -147,3 +147,35 @@ def test_pull_reading_endpoint_succeeds_even_if_fhir_delivery_fails(monkeypatch,
     # attempt (not a no-op from a stale/no-event gating decision) - the Flag was recorded
     # locally even though delivery to the unreachable endpoint failed.
     assert fhir_store.get_open_flag("penns_landing", db_path=tmp_path / "test.db") is not None
+
+
+def test_api_status_returns_latest_reading_contract(monkeypatch, tmp_path):
+    monkeypatch.setattr(server, "pull_reading", lambda: _fake_reading("Safe"))
+    client = _client(monkeypatch, tmp_path)
+    client.post("/api/pull-reading")
+
+    response = client.get("/api/status")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["risk_tier"] == "Safe"
+    assert body["location"] == "penns_landing"
+    assert "estimate_cfu_100ml" not in body
+    assert "location_name" not in body
+
+
+def test_api_status_returns_unavailable_when_no_readings_exist(monkeypatch, tmp_path):
+    client = _client(monkeypatch, tmp_path)
+
+    response = client.get("/api/status")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "unavailable", "reason": "no readings yet"}
+
+
+def test_api_status_rejects_unknown_location(monkeypatch, tmp_path):
+    client = _client(monkeypatch, tmp_path)
+
+    response = client.get("/api/status", params={"location": "somewhere_else"})
+
+    assert response.status_code == 404

@@ -23,7 +23,8 @@ from app.fhir import routes as fhir_routes
 from app.fhir import store as fhir_store
 from app.ingestion.nws import RainfallUnavailable
 from app.ingestion.usgs import UsgsDataUnavailable
-from app.scoring.pull_reading import pull_reading
+from app.scoring.pull_reading import LOCATION_ID, pull_reading
+from app.status import build_status_contract
 
 LANDING_PAGE_DIR = Path(__file__).resolve().parents[1] / "docs" / "landing-page"
 
@@ -76,3 +77,18 @@ def api_pull_reading() -> dict:
 def api_readings(limit: int = 9) -> list[dict]:
     """Recent stored readings, newest first - lets the dashboard survive a page reload."""
     return db.get_recent_readings(limit=limit)
+
+
+@app.get("/api/status")
+def api_status(location: str = LOCATION_ID) -> dict:
+    """Machine-readable status contract for the given location - the same shape MCP's
+    get_current_status tool returns, built from the same app.status.build_status_contract()
+    function (Milestone 5), so they can never disagree. Reads the most recently *stored*
+    reading, not a fresh independent live pull - nothing computes status twice.
+    """
+    if location != LOCATION_ID:
+        raise HTTPException(status_code=404, detail=f"Unknown location: {location}")
+    rows = db.get_recent_readings(limit=1)
+    if not rows:
+        return {"status": "unavailable", "reason": "no readings yet"}
+    return build_status_contract(rows[0])
