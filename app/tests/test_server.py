@@ -179,3 +179,14 @@ def test_api_status_rejects_unknown_location(monkeypatch, tmp_path):
     response = client.get("/api/status", params={"location": "somewhere_else"})
 
     assert response.status_code == 404
+
+
+def test_llms_txt_is_served_with_honesty_language():
+    client = TestClient(server.app)
+
+    response = client.get("/llms.txt")
+
+    assert response.status_code == 200
+    assert "AquaSentinel" in response.text
+    assert "estimate" in response.text
+    assert "predict illness" not in response.text.lower()

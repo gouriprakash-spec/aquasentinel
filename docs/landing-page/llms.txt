@@ -1,0 +1,21 @@
+# AquaSentinel
+
+> A virtual water-quality sensor estimating E. coli risk (Safe/Unsafe) for the Center City
+> tidal Delaware from live USGS gauge and weather data. This is an estimate, not a measured
+> bacteria value - language stays to "estimate" and "flag elevated risk," and never claims
+> to forecast human health outcomes.
+
+AquaSentinel publishes its live scored reading through three agent-facing surfaces, all
+generated from the same scoring output so they cannot disagree with each other or the
+human-facing dashboard:
+
+- [MCP server](/mcp) - read-only tools: list_monitored_locations, get_current_status,
+  get_recent_readings. No write tools exist - an agent can read status, never change
+  anything.
+- [Status endpoint](/api/status) - the same data as a plain JSON GET, no MCP client needed.
+- [Methodology](TODO_GITHUB_REPO_URL/blob/main/docs/product-brief.md) - the full design:
+  data sources, model, alert rules, and honesty guardrails.
+
+Every reading is an estimate from live proxies (turbidity, temperature, conductance,
+dissolved oxygen, rainfall), scored against the EPA 235 CFU/100mL single-sample threshold -
+never a measured bacteria value.

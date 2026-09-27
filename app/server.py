@@ -50,6 +50,11 @@ def logo() -> FileResponse:
     return FileResponse(LANDING_PAGE_DIR / "logo.png")
 
 
+@app.get("/llms.txt")
+def llms_txt() -> FileResponse:
+    return FileResponse(LANDING_PAGE_DIR / "llms.txt", media_type="text/markdown")
+
+
 @app.post("/api/pull-reading")
 def api_pull_reading() -> dict:
     """Fetch a real live reading, score it, persist it, gate it, and return the reading.
