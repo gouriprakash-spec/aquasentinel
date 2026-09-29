@@ -4,6 +4,12 @@ The two things most likely to be wrong here, per BUILD-SPEC.md's own disclosed
 limitations: (1) summing every 5-minute observation instead of 3h-spaced marks would
 count the same rain many times over, and (2) a `null` precipitationLast3Hours must only
 be treated as 0mm when the observation's own weather description confirms no rain.
+
+precip_prev_48h_mm (Milestone 1b, 2026-09-27) needs data further back than a single
+`limit=500` request reaches, so fetch_antecedent_rainfall() now makes two requests: the
+existing recent one, and a second `start`/`end`-bounded one for the older window. Tests
+that need 48h coverage use _full_observations() to synthesize both windows; tests that
+only ever cared about the 24h path keep using the older, shorter fixture unchanged.
 """
 
 from __future__ import annotations
@@ -34,9 +40,25 @@ def _observation(
     }
 
 
-def _client_for(observations: list[dict]) -> httpx.Client:
+def _full_observations(hours: int = 76, precip_mm: float = 0.5) -> list[dict]:
+    """Enough 5-minute observations to cover every 3h mark back to `hours` before NOW -
+    enough for precip_mm, precip_prev_24h_mm, AND precip_prev_48h_mm to all resolve."""
+    return [
+        _observation(NOW - timedelta(minutes=5 * i), precip_mm=precip_mm)
+        for i in range(0, hours * 12)
+    ]
+
+
+def _client_for(recent: list[dict], older: list[dict] | None = None) -> httpx.Client:
+    """Simulates NWS's two-request shape: a plain `limit=500` request (recent) and a
+    `start`/`end`-bounded request (older). Defaults `older` to `recent` so tests that don't
+    care about the distinction can pass one list, as before."""
+    older = recent if older is None else older
+
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={"features": observations})
+        if "start" in request.url.params:
+            return httpx.Response(200, json={"features": older})
+        return httpx.Response(200, json={"features": recent})
 
     return httpx.Client(transport=httpx.MockTransport(handler))
 
@@ -44,44 +66,61 @@ def _client_for(observations: list[dict]) -> httpx.Client:
 def test_does_not_double_count_overlapping_5_minute_observations():
     """Every observation reports 1.0mm for its OWN rolling 3h window. If the code just
     summed every 5-minute record in range, 24h would give ~288mm (288 records). The
-    correct mark-based total is 8mm (8 non-overlapping 3h marks x 1.0mm).
-    """
-    observations = [
-        _observation(NOW - timedelta(minutes=5 * i), precip_mm=1.0)
-        for i in range(0, 24 * 12)  # every 5 minutes for 24h - just enough for the 24h window
-    ]
+    correct mark-based total is 8mm (8 non-overlapping 3h marks x 1.0mm)."""
+    observations = _full_observations(hours=76, precip_mm=1.0)
 
     result = fetch_antecedent_rainfall(client=_client_for(observations), now=NOW)
 
     assert result["precip_prev_24h_mm"] == 8.0
-    assert "precip_prev_48h_mm" not in result  # dropped - see app/model/train.py
 
 
-def test_works_with_only_a_single_nws_requests_worth_of_history():
-    """A real NWS request (limit=500, ~5min spacing) covers ~38-40h, not the full 45h
-    that a 48h window would need. This is exactly why 48h was dropped from the model:
-    simulate that realistic ~38h ceiling and confirm 24h (which only needs data back to
-    21h ago) still resolves fine from it.
-    """
-    observations = [
-        _observation(NOW - timedelta(minutes=5 * i), precip_mm=0.5)
-        for i in range(0, 38 * 12)  # ~38h of history, nothing further back
-    ]
+def test_precip_prev_48h_mm_sums_the_two_prior_calendar_days():
+    """Matches training's window (build_dataset.py:load_precip()): the two FULL local
+    calendar days before today, not a rolling 48h-from-now window. 8 marks/day x 2 days x
+    1.0mm/mark = 16.0mm, regardless of how much (if any) rain fell today."""
+    observations = _full_observations(hours=76, precip_mm=1.0)
 
     result = fetch_antecedent_rainfall(client=_client_for(observations), now=NOW)
 
-    assert result["precip_prev_24h_mm"] == 4.0
+    assert result["precip_prev_48h_mm"] == 16.0
+
+
+def test_fails_closed_when_the_older_window_is_incomplete():
+    """The `start`/`end` request comes back too short to cover both prior calendar days -
+    must fail closed, never a partial 48h figure."""
+    recent = _full_observations(hours=40, precip_mm=1.0)
+    older = _full_observations(hours=5, precip_mm=1.0)  # nowhere near enough
+
+    with pytest.raises(RainfallUnavailable):
+        fetch_antecedent_rainfall(client=_client_for(recent, older=older), now=NOW)
+
+
+def test_fails_closed_even_when_24h_alone_would_have_resolved():
+    """A real NWS request (limit=500, ~5min spacing) covers ~38-40h - plenty for 24h rain
+    (which only needs data back to 21h ago) but nowhere near the ~62h back that the
+    day-before-yesterday half of precip_prev_48h_mm needs. Before this task, that would
+    have been fine: 48h wasn't computed at all, so 24h resolving on its own was enough.
+    Now precip_prev_48h_mm is mandatory (Task 5's rainfall rule needs it to decide the
+    tier), and the three fields are computed together in one dict - there's no "24h
+    succeeds independently of 48h" anymore. So even though the RECENT request alone could
+    satisfy precip_mm/precip_prev_24h_mm here, an empty OLDER request must still fail the
+    whole fetch, per the fail-closed rule: never a guessed or partial rainfall figure."""
+    recent = _full_observations(hours=38, precip_mm=0.5)
+
+    with pytest.raises(RainfallUnavailable):
+        fetch_antecedent_rainfall(client=_client_for(recent, older=[]), now=NOW)
 
 
 def test_null_precip_treated_as_zero_when_weather_confirms_no_rain():
     observations = [
         _observation(NOW - timedelta(minutes=5 * i), precip_mm=None, description="Clear")
-        for i in range(0, 24 * 12)
+        for i in range(0, 76 * 12)
     ]
 
     result = fetch_antecedent_rainfall(client=_client_for(observations), now=NOW)
 
     assert result["precip_prev_24h_mm"] == 0.0
+    assert result["precip_prev_48h_mm"] == 0.0
 
 
 def test_fails_closed_when_null_precip_cannot_be_confirmed_dry():

@@ -28,8 +28,12 @@ EASTERN = ZoneInfo("America/New_York")
 def fetch_antecedent_rainfall(
     client: httpx.Client | None = None, now: datetime | None = None
 ) -> dict[str, float]:
-    """Return {precip_mm, precip_prev_24h_mm} in mm, from Open-Meteo's hourly forecast
-    model at the gauge's coordinates. Same shape as app.ingestion.nws's function.
+    """Return {precip_mm, precip_prev_24h_mm, precip_prev_48h_mm} in mm, from Open-Meteo's
+    hourly forecast model at the gauge's coordinates. Same shape as app.ingestion.nws's
+    function, including the calendar-day convention for precip_prev_48h_mm (added
+    2026-09-27, Milestone 1b) - this is the fallback path used whenever NWS's own
+    observation is unavailable, so it must supply the same figure the rainfall rule needs,
+    honestly, not just the 24h value.
     """
     now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     owns_client = client is None
@@ -41,7 +45,7 @@ def fetch_antecedent_rainfall(
                 "latitude": GAUGE_LAT,
                 "longitude": GAUGE_LON,
                 "hourly": "precipitation",
-                "past_hours": 24,
+                "past_hours": 76,
                 "timezone": "UTC",
             },
         )
@@ -60,11 +64,25 @@ def fetch_antecedent_rainfall(
     local_midnight = now.astimezone(EASTERN).replace(
         hour=0, minute=0, second=0, microsecond=0
     ).astimezone(timezone.utc)
+    day_1_start, day_1_end = local_midnight - timedelta(hours=24), local_midnight
+    day_2_start, day_2_end = local_midnight - timedelta(hours=48), local_midnight - timedelta(hours=24)
+
+    if not any(ts <= day_2_start for ts, _ in hours):
+        raise RainfallUnavailable(
+            "Open-Meteo's hourly history does not reach back far enough for precip_prev_48h_mm"
+        )
 
     precip_mm = sum(value for ts, value in hours if local_midnight <= ts <= now)
     precip_prev_24h_mm = sum(value for ts, value in hours if now - ts <= timedelta(hours=24))
+    precip_prev_48h_mm = sum(
+        value for ts, value in hours if day_1_start <= ts < day_1_end or day_2_start <= ts < day_2_end
+    )
 
-    return {"precip_mm": round(precip_mm, 1), "precip_prev_24h_mm": round(precip_prev_24h_mm, 1)}
+    return {
+        "precip_mm": round(precip_mm, 1),
+        "precip_prev_24h_mm": round(precip_prev_24h_mm, 1),
+        "precip_prev_48h_mm": round(precip_prev_48h_mm, 1),
+    }
 
 
 def _parse_hourly_precipitation(payload: dict) -> list[tuple[datetime, float]]:
