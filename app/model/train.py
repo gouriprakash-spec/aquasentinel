@@ -194,6 +194,112 @@ def evaluate_model(n_seeds: int = 10) -> dict:
     return metrics
 
 
+NEARSHORE_DATA_FILE = DATASET_DIR / "nearshore_labels.csv"
+NEARSHORE_MODEL_NAME = "nearshore"
+NEARSHORE_TARGET = "unsafe"
+NEARSHORE_FEATURES = [
+    "water_temp_c",
+    "sp_conductance_uscm",
+    "dissolved_oxygen_mgl",
+    "ph",
+    "precip_mm",
+    "precip_prev_24h_mm",
+]
+# Turbidity is deliberately excluded - see docs/superpowers/specs/
+# 2026-09-27-model-honesty-fix-milestone1b-design.md Section 2b.3: no significant relationship
+# with the outcome anywhere it was tested (Mann-Whitney p=0.885 channel, p=0.181 near-shore;
+# ROC AUC 0.487 and 0.271 respectively - both at or below chance). Removing it from the honest
+# RF changed nothing beyond noise in every dataset it was checked against. It is still fetched
+# and shown as dashboard evidence (app/scoring/pull_reading.py) - just not a model input.
+
+
+def evaluate_nearshore_model(n_seeds: int = 10) -> dict:
+    """Honest (date-grouped) out-of-fold metrics for the near-shore-trained confidence-signal
+    model, then a final fit on all 69 rows, saved as the live model artifact.
+
+    Already one row per date (spec Section 2b's near-shore labels are collapsed to a single
+    row per date before this function ever sees them), so StratifiedKFold and
+    StratifiedGroupKFold produce identical splits here - StratifiedGroupKFold is used anyway,
+    for the same defense-in-depth reason DATA-DICTIONARY.md's addendum gives.
+    """
+    df = pd.read_csv(NEARSHORE_DATA_FILE)
+    X = df[NEARSHORE_FEATURES].to_numpy()
+    y = df[NEARSHORE_TARGET].astype(int).to_numpy()
+    dates = df["date"].to_numpy()
+
+    n_splits = _group_cv_n_splits(y, dates)
+    precisions, recalls = [], []
+    for seed in range(n_seeds):
+        cv = StratifiedGroupKFold(n_splits=n_splits, shuffle=True, random_state=seed)
+        oof = np.empty(len(y), dtype=int)
+        for train_idx, test_idx in cv.split(X, y, groups=dates):
+            rf = _make_rf_pipeline()
+            rf.fit(X[train_idx], y[train_idx])
+            oof[test_idx] = rf.predict(X[test_idx])
+        precisions.append(precision_score(y, oof, zero_division=0))
+        recalls.append(recall_score(y, oof, zero_division=0))
+
+    metrics = {
+        "n_rows": len(df),
+        "n_unsafe": int(y.sum()),
+        "cv_folds": n_splits,
+        "random_forest": {
+            "precision": round(float(np.mean(precisions)), 3),
+            "recall": round(float(np.mean(recalls)), 3),
+        },
+    }
+
+    final_rf = _make_rf_pipeline()
+    final_rf.fit(X, y)
+    ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
+    joblib.dump(
+        {"model": final_rf, "features": NEARSHORE_FEATURES},
+        ARTIFACTS_DIR / f"rf_{NEARSHORE_MODEL_NAME}.joblib",
+    )
+
+    return metrics
+
+
+def derive_low_confidence_cutoff(n_seeds: int = 10) -> float:
+    """Youden's-J threshold on "confidence" (spec Step 4's formula: probability_unsafe if the
+    rule says Unsafe, else 1 - probability_unsafe) that best separates near-shore days where
+    the rainfall rule's decision matched the true label from days where it didn't - same
+    ROC/Youden's-J pattern as derive_rain_fallback_threshold(), applied to a different signal.
+
+    The rule itself needs no cross-validation (it's a fixed threshold, not fit per fold); the
+    model's probability must come from out-of-fold predictions so it isn't cheating by having
+    seen that row during training.
+    """
+    df = pd.read_csv(NEARSHORE_DATA_FILE)
+    X = df[NEARSHORE_FEATURES].to_numpy()
+    y = df[NEARSHORE_TARGET].astype(int).to_numpy()
+    dates = df["date"].to_numpy()
+    rain = df["precip_prev_48h_mm"].to_numpy()
+
+    n_splits = _group_cv_n_splits(y, dates)
+    confidences_by_seed = []
+    for seed in range(n_seeds):
+        cv = StratifiedGroupKFold(n_splits=n_splits, shuffle=True, random_state=seed)
+        oof_proba = np.empty(len(y), dtype=float)
+        for train_idx, test_idx in cv.split(X, y, groups=dates):
+            rf = _make_rf_pipeline()
+            rf.fit(X[train_idx], y[train_idx])
+            oof_proba[test_idx] = rf.predict_proba(X[test_idx])[:, 1]
+
+        rule_threshold = config.RAIN_FALLBACK_THRESHOLD_MM
+        rule_unsafe = rain >= rule_threshold
+        confidence = np.where(rule_unsafe, oof_proba, 1.0 - oof_proba)
+        rule_correct = rule_unsafe.astype(int) == y
+        confidences_by_seed.append((confidence, rule_correct))
+
+    all_confidence = np.concatenate([c for c, _ in confidences_by_seed])
+    all_correct = np.concatenate([c for _, c in confidences_by_seed])
+
+    fpr, tpr, thresholds = roc_curve(all_correct, all_confidence)
+    best_idx = int(np.argmax(tpr - fpr))
+    return float(thresholds[best_idx])
+
+
 def derive_rain_fallback_threshold() -> dict:
     """Youden's-J-optimal precip_prev_48h_mm threshold, from the full labeled master
     (including proxy-less rows), for use when no USGS gauge reading is available.

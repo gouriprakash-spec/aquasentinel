@@ -26,6 +26,9 @@ RECREATION_SEASON_END = (10, 31)  # app/alerts/gating.py still computes (current
 RAIN_FALLBACK_THRESHOLD_MM = 2.5
 
 # --- Values not yet decided (do not invent numbers here) ---
-LOW_CONFIDENCE_CUTOFF = None  # TODO(decide): derive from the trained model's validation results.
+# Derived 2026-09-27 by app/model/train.py:derive_low_confidence_cutoff() - the confidence
+# value (see app/scoring/pull_reading.py's formula) below which the rainfall rule's decision
+# and the near-shore model most often disagreed, out-of-fold, on the 69-row near-shore set.
+LOW_CONFIDENCE_CUTOFF = 0.7466666666666666
 FORECAST_RAIN_THRESHOLD_MM_T = None  # TODO(decide): derive from our rainfall data (NWS heads-up).
 CSO_OUTFALL_IDS: list[str] = []  # TODO(decide): research PWD outfall locations + tidal excursion.

@@ -10,6 +10,7 @@ why the pre-2021 model was evaluated and dropped (30% recall, beaten by the rule
 
 from __future__ import annotations
 
+import joblib
 import pytest
 
 from app import config
@@ -105,3 +106,60 @@ def test_date_grouped_cv_never_splits_a_date_across_train_and_test():
         train_dates = set(dates[train_idx])
         test_dates = set(dates[test_idx])
         assert train_dates.isdisjoint(test_dates)
+
+
+def test_nearshore_model_trains_on_all_69_rows_without_turbidity():
+    metrics = train.evaluate_nearshore_model()
+
+    assert metrics["n_rows"] == 69
+    assert metrics["n_unsafe"] == 30
+    assert "turbidity_fnu_mean" not in train.NEARSHORE_FEATURES
+    assert "turbidity_fnu_max" not in train.NEARSHORE_FEATURES
+    assert len(train.NEARSHORE_FEATURES) == 6
+
+
+def test_nearshore_model_honest_metrics_are_reported():
+    metrics = train.evaluate_nearshore_model()
+
+    assert "precision" in metrics["random_forest"]
+    assert "recall" in metrics["random_forest"]
+    assert 0.0 <= metrics["random_forest"]["precision"] <= 1.0
+    assert 0.0 <= metrics["random_forest"]["recall"] <= 1.0
+
+
+def test_nearshore_model_artifact_is_saved(tmp_path, monkeypatch):
+    monkeypatch.setattr(train, "ARTIFACTS_DIR", tmp_path)
+    train.evaluate_nearshore_model()
+
+    bundle = joblib.load(tmp_path / "rf_nearshore.joblib")
+    assert bundle["features"] == train.NEARSHORE_FEATURES
+    assert hasattr(bundle["model"], "predict_proba")
+
+
+def test_low_confidence_cutoff_is_derived_from_data_not_invented():
+    cutoff = train.derive_low_confidence_cutoff()
+
+    # Confidence can range over the full [0,1]: unlike the old model-decides formula (where
+    # the same probability picked both the tier and the confidence, guaranteeing >= 0.5),
+    # the rule and the model are now decoupled - a model that strongly disagrees with the
+    # rule's call must be able to report LOW confidence, below 0.5 (Task 5).
+    assert 0.0 <= cutoff <= 1.0
+
+
+def test_low_confidence_cutoff_is_not_yet_consumed_anywhere_else():
+    """Review Focus: config.LOW_CONFIDENCE_CUTOFF moves from None to a real number in this
+    task, but nothing should start reading it - that happens when the Sampling Coordinator
+    (Milestone 8) is actually built. This is an intentional, current-state pin: when
+    Milestone 8 wires it in, this test is the first thing to update, not a trap to work
+    around."""
+    import pathlib
+
+    app_dir = pathlib.Path(train.__file__).resolve().parents[1]
+    hits = []
+    for py_file in app_dir.rglob("*.py"):
+        if py_file.name in ("config.py",) or "tests" in py_file.parts:
+            continue
+        if "LOW_CONFIDENCE_CUTOFF" in py_file.read_text():
+            hits.append(str(py_file))
+
+    assert hits == []
