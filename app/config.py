@@ -23,6 +23,8 @@ RECREATION_SEASON_END = (10, 31)  # app/alerts/gating.py still computes (current
 # rainfall threshold that maximizes Youden's J (TPR - FPR) on the "unsafe" target.
 # Derived 2026-09-25 from aquasentinel_labels_master.csv (330 rows, 49 unsafe): precision 0.372,
 # recall 0.653 in-sample. Re-derive if the dataset is rebuilt with `build_dataset.py --fetch`.
+# Note (2026-09-27, Milestone 1b): this threshold is chosen on the same data it is evaluated
+# against - one parameter, low overfit risk, but still in-sample. Disclosed, not hidden.
 RAIN_FALLBACK_THRESHOLD_MM = 2.5
 
 # --- Values not yet decided (do not invent numbers here) ---

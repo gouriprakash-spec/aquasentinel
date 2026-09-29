@@ -86,6 +86,14 @@ Replace the mocked `scoreReading()` in `index.html`.
   `dissolved_oxygen_mgl`, `ph`, `precip_mm`, `precip_prev_24h_mm`, `precip_prev_48h_mm`,
   `turbidity_fnu_mean`, `turbidity_fnu_max`. See `app/model/train.py`.
 
+- **Amended 2026-09-27 (Milestone 1b):** that model's reported 0.615/0.533 did not survive
+  honest, date-grouped cross-validation (Navy Yard and Ben Franklin Bridge share identical
+  gauge/rain features per date - ordinary folds leaked). Live scoring no longer uses this model
+  to decide `risk_tier`: a disclosed rainfall rule (prior-48h rain >= 2.5mm) decides it, and a
+  model retrained on Penn's Landing near-shore labels (6 features, turbidity excluded - it
+  showed no significant relationship with the outcome anywhere it was tested) only sets
+  `confidence`. See `docs/superpowers/specs/2026-09-27-model-honesty-fix-milestone1b-design.md`.
+
 ### No public alerting (scope decision, 2026-09-26)
 An earlier version of this spec had a "TODO 2 — real `subscribe()`" here: a phone-number
 opt-in, a Subscription Agent parsing plain-language alert requests, and a WhatsApp broadcaster

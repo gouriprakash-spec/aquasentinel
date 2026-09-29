@@ -94,6 +94,13 @@ Because a lab culture takes 18–24 hours, we estimate present-day risk from rea
 
 The pitch framing is deliberate: the prediction step is conventional and literature-validated on purpose. The contribution is not a modeling breakthrough on a few dozen samples — it is everything the two pillars do with the prediction.
 
+**Amended 2026-09-27.** A post-hoc review found that the shipped random-forest's reported
+precision/recall did not survive honest, date-grouped cross-validation - two label stations
+sharing one upstream gauge meant ordinary folds leaked identical feature rows across train and
+test. Finding and fixing that leak is part of this project's data-quality story, not a footnote:
+live scoring now uses a disclosed, one-line rainfall rule to decide Safe/Unsafe, and a model
+retrained on Penn's Landing near-shore labels only informs how much to trust that decision.
+
 ## Pillar 1 — The dashboard and the Advisory Reader Agent
 
 **The dashboard.** The public face of AquaSentinel is the landing page in `docs/landing-page/` (hero, live readings, status banner, readings table). Its "Pull latest reading" is real per `docs/landing-page/BUILD-SPEC.md`: proxies from USGS Penn's Landing gauge 01467200, rainfall from NOAA/Open-Meteo, scored by the trained model, with the Safe/Unsafe tier decided deterministically against the EPA 235 CFU/100 mL single-sample limit. Alongside the human-facing page, the dashboard publishes a machine-readable status endpoint in the contract format. There is no reason to scrape a page we control, and no reason for us to decide who else gets to see it — it's public, pull-based, on the same terms for everyone.

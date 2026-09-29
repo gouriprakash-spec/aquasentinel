@@ -37,6 +37,18 @@ Build top to bottom. If behind on Oct 1, **cut from the bottom, never the middle
    Shipped model: precision 0.615, recall 0.533 (5-fold CV, 60 rows, 15 unsafe). Rules fallback
    threshold: 2.5mm prior-48h rain (`app/config.py:RAIN_FALLBACK_THRESHOLD_MM`). Low-confidence
    cutoff still to be derived — not yet needed until the scoring job (milestone 2) calls the model.
+
+   **Amended 2026-09-27 (Milestone 1b).** The 0.615/0.533 figure above does not survive
+   date-grouped cross-validation - Navy Yard and Ben Franklin Bridge share identical gauge/rain
+   features on every date, so ordinary row-level folds leaked. Honest, date-grouped precision/
+   recall for that same channel model: see `app/model/artifacts/training_report.json`'s
+   `random_forest` key (the row-level number is kept, not deleted, under
+   `random_forest_superseded_leaky_row_level_cv`). Live scoring no longer uses this channel
+   model to decide anything - see Milestone 6 (renumbered from a since-superseded position;
+   see `plan.md`'s 2026-09-27 milestone reorder history in git log) for the rule-first pivot:
+   a disclosed rainfall rule now decides Safe/Unsafe, and a model retrained on Penn's Landing
+   near-shore labels (69 rows, 6 features, no turbidity) only informs confidence. Full design:
+   `docs/superpowers/specs/2026-09-27-model-honesty-fix-milestone1b-design.md`.
 2. **Real `pullReading()`. DONE 2026-09-25.** Live USGS `01467200` proxies + NWS `KPHL` station
    observations (switched from NOAA NCEI, which lags ~3 days - see `docs/landing-page/BUILD-SPEC.md`),
    scored by the shipped model, tier decided in deterministic code. Verified against real live

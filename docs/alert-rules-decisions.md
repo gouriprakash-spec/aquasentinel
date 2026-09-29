@@ -42,7 +42,22 @@ Decisions made one at a time on Sep 23, 2026, and applied to `docs/product-brief
   field internally (harmless, unused — see `plan.md`'s Open Questions), so this decision's May 1 -
   Oct 31 dates remain accurate to what the code does, just not to anything that acts on it.
 
+## 6. Model decides confidence, a rainfall rule decides the tier
+- Decision: `app.model.rules_fallback.classify_by_rainfall()` (prior-48h rain >=
+  `RAIN_FALLBACK_THRESHOLD_MM`) decides `risk_tier` in live scoring. A random forest retrained
+  on Penn's Landing near-shore labels only sets `confidence` (high when it agrees with the
+  rule, low when it doesn't) - it never decides the tier itself.
+- Reason: date-grouped (honest) cross-validation showed the originally-shipped channel-station
+  model carried no real out-of-sample skill (F1 dropped from 0.49 to 0.11 once dates weren't
+  split across train and test) - the rainfall rule consistently outperformed it. A model
+  retrained specifically on near-shore labels does show real skill, but on the full 69-row
+  near-shore history (not a smaller turbidity-restricted subset) the rule still edges it out.
+  Full analysis: `docs/superpowers/specs/2026-09-27-model-honesty-fix-milestone1b-design.md`.
+- Basis: independently re-derived twice (once during the original leak review, once fresh
+  during spec approval) with matching results both times.
+
 ## Still open (to be derived, not decided)
-- Low-confidence cutoff: set from the trained model's validation results.
+- ~~Low-confidence cutoff: set from the trained model's validation results.~~ Resolved
+  2026-09-27 - see decision 6 and `app/config.py:LOW_CONFIDENCE_CUTOFF`.
 - Forecast rain threshold T: derive from our rainfall data.
 - CSO outfall set near Penn's Landing: research PWD outfall locations and the tidal excursion.
