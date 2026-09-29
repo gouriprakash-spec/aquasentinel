@@ -45,6 +45,10 @@ EPA_GEOMEAN = 126.0                          # CFU/100 mL, 30-day geometric mean
 STATION_NAMES = {"31DELRBC_WQX-892071": "Ben Franklin Bridge",
                  "31DELRBC_WQX-892065": "Navy Yard"}
 
+NEARSHORE_RAW = os.path.join(RAW, "drbc_nearshore_ecoli_2019_2025.csv")
+NEARSHORE_SITES = (["DRBC-DEL-LL"] + [f"DRBC-6107-0{n}" for n in range(49, 56)]
+                   + [f"DRBC-C{n}" for n in range(1, 6)])
+
 
 # ----------------------------------------------------------------------------- fetch
 def fetch():
@@ -249,6 +253,33 @@ def build():
         print("  -", f)
 
 
+def build_nearshore():
+    """Penn's Landing near-shore labels, collapsed to one row per date (MAX across sites -
+    conservative, matches load_labels()'s own same-station-same-date rule). Moved here from
+    nearshore_experiment/build_nearshore_labels.py 2026-09-27 (Milestone 1b Step 2) - this is
+    now a first-class output, not a one-off experiment script. All 69 label-days ship (not
+    just the turbidity era): the near-shore model doesn't use turbidity as a feature (see
+    docs/superpowers/specs/2026-09-27-model-honesty-fix-milestone1b-design.md Section 2b.3),
+    so restricting to 2021-10-28 onward would only throw away real, usable near-shore samples.
+    """
+    d = pd.read_csv(NEARSHORE_RAW, parse_dates=["date"])
+    d = d[d.site_id.isin(NEARSHORE_SITES)]
+    lab = (d.groupby("date")
+             .agg(ecoli_mpn_100ml=("ecoli_value", "max"),
+                  n_samples=("ecoli_value", "size"),
+                  n_sites=("site_id", "nunique"),
+                  sites=("site_id", lambda s: ";".join(sorted(set(s)))),
+                  censored=("detection_condition", lambda s: s.notna().any()))
+             .reset_index())
+    lab["station_name"] = "Penns Landing near-shore (collapsed)"
+    lab["unsafe"] = (lab.ecoli_mpn_100ml >= EPA_SINGLE_SAMPLE).astype(int)
+    df = lab.merge(load_proxies(), on="date", how="left").merge(load_precip(), on="date", how="left")
+    df.to_csv(os.path.join(OUT, "nearshore_labels.csv"), index=False)
+    print(f"\nNear-shore: {len(df)} label-days, {int(df.unsafe.sum())} unsafe; "
+          f"from {d.shape[0]} raw samples")
+    return df
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--fetch", action="store_true", help="re-pull raw sources")
@@ -256,3 +287,4 @@ if __name__ == "__main__":
     if a.fetch:
         fetch()
     build()
+    build_nearshore()

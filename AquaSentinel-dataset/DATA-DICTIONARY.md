@@ -139,22 +139,30 @@ new positive labels where the model is unsure) matters.
    turbidity (the builder now degrades gracefully and warns). Run
    `build_dataset.py --fetch` to restore turbidity and rebuild end-to-end.
 
-## Addendum 2026-09-27 — `data/regime_B_plus_nearshore.csv` (proposed Milestone 1b)
+## Addendum 2026-09-27 — `data/nearshore_labels.csv` (Milestone 1b, approved and shipped)
 
-Regime B (Ben Franklin Bridge + Navy Yard, 60 rows) plus 14 Penn's Landing near-shore label-days
-from the turbidity era. 74 rows / 41 distinct dates / 23 unsafe. Existing CSVs are unchanged.
-Built by `nearshore_experiment/build_nearshore_labels.py` then `build_combined_regime_B.py`,
-from `../../drbc_nearshore_ecoli_2019_2025.csv` (DRBC near-shore program).
+**Supersedes the pooled `regime_B_plus_nearshore.csv` approach originally proposed the same day**
+(see `docs/superpowers/specs/2026-09-27-model-honesty-fix-milestone1b-design.md` Section 2b.4).
+`regime_B_plus_nearshore.csv` still exists, unmodified, but is no longer used by any live code.
 
-- Same columns as regime B, plus `nearshore` (1 = Penn's Landing near-shore, 0 = channel station)
-  and `source_sites` (DRBC site IDs behind each row).
-- Near-shore rows collapse DRBC-DEL-LL, DRBC-6107-049..055 and DRBC-C1..C5 to one row per date
-  (MAX value). The 2024 rows take the max over up to 7 sites, which inflates "unsafe".
-- Near-shore values are MPN/100mL (`unit` says so) but stored in `ecoli_cfu_100ml`; treated as
-  equivalent at the 235 threshold.
-- **Split any cross-validation by `date`.** BFB and Navy Yard share all 30 dates and identical gauge
-  features, so row-level folds leak (see `nearshore_experiment/README.md`).
-- 6 regime B rows have a blank `unit` (inherited from the source).
+All 69 Penn's Landing near-shore label-days (2019-2025), 30 unsafe. Built by
+`build_dataset.py:build_nearshore()` from `raw/drbc_nearshore_ecoli_2019_2025.csv` (DRBC
+near-shore program via WQP, MPN/100mL) — moved into this repo 2026-09-27; it previously lived
+outside the repo entirely and was not reproducible from a clean clone.
+
+- Sources collapsed to one row per date (MAX value, conservative): `DRBC-DEL-LL` (Penn's Landing
+  Lagoon, 2019-2022), `DRBC-6107-049..055` (2024 cluster within ~1km of the lagoon), `DRBC-C1..C5`
+  (2021 cross-section transect). The 2024 rows take the max over up to 7 sites, which inflates
+  "unsafe".
+- Near-shore values are MPN/100mL (`unit` says so) but stored as `ecoli_mpn_100ml`; treated as
+  equivalent to CFU/100mL at the 235 threshold.
+- Joined to USGS 01467200 daily proxies and NCEI PHL precipitation via `build_dataset.py`'s
+  existing loaders. Turbidity is joined when present but **not used as a model feature** — it
+  showed no significant relationship with the outcome here or anywhere else it was tested
+  (Mann-Whitney p=0.181; ROC AUC 0.271; dropping it from the honest model changes nothing beyond
+  noise). It is still a genuine measurement, just not one the model uses.
+- **Split any cross-validation by `date`** even though this file already has at most one row per
+  date (defense in depth, matching the same convention as every other labeled file here).
 
 ## Provenance
 
