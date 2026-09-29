@@ -4,12 +4,20 @@
     "n_unsafe": 15,
     "cv_folds": 5,
     "random_forest": {
+      "precision": 0.193,
+      "recall": 0.073
+    },
+    "random_forest_superseded_leaky_row_level_cv": {
       "precision": 0.615,
       "recall": 0.533
     },
     "linear_regression_baseline": {
-      "precision": 0.0,
-      "recall": 0.0
+      "precision": 0.04,
+      "recall": 0.033
+    },
+    "rainfall_rule": {
+      "precision": 0.6,
+      "recall": 0.733
     }
   },
   "rules_fallback": {
