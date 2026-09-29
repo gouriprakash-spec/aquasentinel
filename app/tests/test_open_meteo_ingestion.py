@@ -108,3 +108,23 @@ def test_fails_closed_when_hourly_history_does_not_reach_back_far_enough():
 
     with pytest.raises(RainfallUnavailable):
         fetch_antecedent_rainfall(client=_client_for(payload), now=NOW)
+
+
+def test_fails_closed_when_a_null_hour_falls_inside_the_48h_window():
+    """A null value in the MIDDLE of the day_1/day_2 window (not at the series' outer
+    edge) must raise, not silently undercount. A check that only confirms the series
+    reaches back far enough overall wouldn't catch this - the series here reaches all
+    the way to -76h, it's just missing one hour buried inside it. That missing hour gets
+    silently dropped by _parse_hourly_precipitation (nulls aren't kept as 0mm), so the sum
+    would otherwise be short by exactly the rain that hour should have contributed - the
+    "guessed or partial rainfall figure" the fail-closed rule forbids."""
+    times = [(NOW - timedelta(hours=h)).isoformat() for h in range(76, -1, -1)]
+    values = [0.0] * len(times)
+    # Sep 24, noon UTC - well inside yesterday's window ([Sep24 04:00, Sep25 04:00) UTC),
+    # nowhere near either boundary.
+    mid_window_hour = datetime(2026, 9, 24, 12, 0, 0, tzinfo=timezone.utc).isoformat()
+    values[times.index(mid_window_hour)] = None
+    payload = {"hourly": {"time": times, "precipitation": values}}
+
+    with pytest.raises(RainfallUnavailable):
+        fetch_antecedent_rainfall(client=_client_for(payload), now=NOW)

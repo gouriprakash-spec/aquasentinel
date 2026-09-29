@@ -49,6 +49,20 @@ def _full_observations(hours: int = 76, precip_mm: float = 0.5) -> list[dict]:
     ]
 
 
+def _observations_between(
+    hours_back_min: int, hours_back_max: int, precip_mm: float
+) -> list[dict]:
+    """5-minute observations covering ONLY `hours_back_min`..`hours_back_max` hours before
+    NOW - simulates a genuinely distinct `older` request whose reach doesn't overlap a
+    `recent` fixture that only goes back to `hours_back_min` hours (or less). Used to prove
+    a merge actually happened: if `recent` and `older` never share a timestamp and each
+    carries its own precip value, a correct total can only come from combining both."""
+    return [
+        _observation(NOW - timedelta(minutes=m), precip_mm=precip_mm)
+        for m in range(hours_back_min * 60, hours_back_max * 60 + 1, 5)
+    ]
+
+
 def _client_for(recent: list[dict], older: list[dict] | None = None) -> httpx.Client:
     """Simulates NWS's two-request shape: a plain `limit=500` request (recent) and a
     `start`/`end`-bounded request (older). Defaults `older` to `recent` so tests that don't
@@ -83,6 +97,29 @@ def test_precip_prev_48h_mm_sums_the_two_prior_calendar_days():
     result = fetch_antecedent_rainfall(client=_client_for(observations), now=NOW)
 
     assert result["precip_prev_48h_mm"] == 16.0
+
+
+def test_precip_prev_48h_mm_only_resolves_by_combining_both_requests():
+    """Regression guard for this task's entire stated purpose: if `nws.py` ever silently
+    dropped `older_payload` (e.g. someone simplifies
+    `_parse_observations(recent_payload) + _parse_observations(older_payload)` back down
+    to just `recent_payload`), this test must fail - not any of the tests above it, which
+    all pass the SAME 76h fixture as both `recent` and `older`, so `recent` alone already
+    covers everything they need regardless of whether `older` was ever consulted.
+
+    Here `recent` (38h, matching NWS's real single-request ceiling) and `older` (a
+    disjoint 39h-76h slice, matching the real OLDER_WINDOW bounds) never share a
+    timestamp and carry DIFFERENT precip values, so the expected 48h total (yesterday's
+    8 marks from `recent` at 1.0mm + the day-before's 8 marks from `older` at 2.0mm) can
+    only be correct if both were genuinely combined - dropping `older` would make the
+    day-before-yesterday marks unresolvable (a raise, not a silently-passing wrong sum),
+    and using only `older` would give the wrong total for yesterday."""
+    recent = _full_observations(hours=38, precip_mm=1.0)  # covers yesterday, not further
+    older = _observations_between(39, 76, precip_mm=2.0)  # covers only the day before that
+
+    result = fetch_antecedent_rainfall(client=_client_for(recent, older=older), now=NOW)
+
+    assert result["precip_prev_48h_mm"] == 24.0  # 8*1.0 (yesterday) + 8*2.0 (day before)
 
 
 def test_fails_closed_when_the_older_window_is_incomplete():

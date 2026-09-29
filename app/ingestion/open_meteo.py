@@ -67,9 +67,15 @@ def fetch_antecedent_rainfall(
     day_1_start, day_1_end = local_midnight - timedelta(hours=24), local_midnight
     day_2_start, day_2_end = local_midnight - timedelta(hours=48), local_midnight - timedelta(hours=24)
 
-    if not any(ts <= day_2_start for ts, _ in hours):
+    if _missing_hourly_coverage(hours, day_1_start, day_1_end) or _missing_hourly_coverage(
+        hours, day_2_start, day_2_end
+    ):
         raise RainfallUnavailable(
-            "Open-Meteo's hourly history does not reach back far enough for precip_prev_48h_mm"
+            "Open-Meteo's hourly series is missing at least one hour within the "
+            "precip_prev_48h_mm window - either it doesn't reach back far enough, or a "
+            "null value fell inside the window. Either way, a null can't be silently "
+            "treated as 0mm (see _parse_hourly_precipitation, which drops null hours "
+            "entirely rather than counting them as no rain)."
         )
 
     precip_mm = sum(value for ts, value in hours if local_midnight <= ts <= now)
@@ -83,6 +89,29 @@ def fetch_antecedent_rainfall(
         "precip_prev_24h_mm": round(precip_prev_24h_mm, 1),
         "precip_prev_48h_mm": round(precip_prev_48h_mm, 1),
     }
+
+
+def _missing_hourly_coverage(
+    hours: list[tuple[datetime, float]], start: datetime, end: datetime
+) -> bool:
+    """True if any hourly mark in [start, end) has no corresponding value in `hours`.
+
+    Catches both a series that doesn't reach back far enough AND a null value that fell
+    in the MIDDLE of the window - `_parse_hourly_precipitation` drops null hours entirely,
+    so from here a mid-window null looks identical to a gap at the edge, and both must
+    fail closed the same way. This is the hourly-granularity analog of NWS's
+    `_rain_at_mark`, which requires an observation near every 3h mark it needs; here every
+    hour in the window is its own required mark, with no tolerance since Open-Meteo's
+    hourly series has no missing-by-design timestamps the way NWS's 5-minute
+    observations do.
+    """
+    present = {ts for ts, _ in hours}
+    mark = start
+    while mark < end:
+        if mark not in present:
+            return True
+        mark += timedelta(hours=1)
+    return False
 
 
 def _parse_hourly_precipitation(payload: dict) -> list[tuple[datetime, float]]:
