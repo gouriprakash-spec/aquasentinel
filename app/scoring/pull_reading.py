@@ -26,9 +26,12 @@ from app.ingestion import open_meteo
 from app.ingestion.nws import RainfallUnavailable
 from app.ingestion.nws import fetch_antecedent_rainfall as fetch_nws_rainfall
 from app.ingestion.usgs import fetch_usgs_proxies
+from app.model.rules_fallback import classify_by_rainfall
 
 ARTIFACTS_DIR = Path(__file__).resolve().parents[1] / "model" / "artifacts"
-MODEL_PATH = ARTIFACTS_DIR / "rf_B_post2021.joblib"
+MODEL_PATH = ARTIFACTS_DIR / "rf_nearshore.joblib"  # changed from rf_B_post2021.joblib - the
+# channel-trained model is retired from live scoring entirely (spec Section 5): it showed no
+# real out-of-sample skill (Milestone 1b), so it must not be resurrected even as a fallback.
 
 LOCATION_ID = "penns_landing"
 LOCATION_NAME = "Penn's Landing, Center City tidal Delaware"
@@ -46,18 +49,28 @@ def _load_model() -> dict:
 
 
 def pull_reading() -> dict:
-    """Fetch live data, score it, and return the shared signal contract."""
+    """Fetch live data, score it, and return the shared signal contract.
+
+    Milestone 1b (2026-09-27): the rainfall rule decides risk_tier; the near-shore-trained
+    model only informs confidence (how much it agrees with the rule), never the tier itself.
+    See docs/superpowers/specs/2026-09-27-model-honesty-fix-milestone1b-design.md Section 3.
+    """
     proxies = fetch_usgs_proxies()
     rainfall, rainfall_source = _fetch_rainfall()
 
     bundle = _load_model()
-    feature_values = _build_feature_vector(proxies, rainfall, bundle["features"])
+    decision = classify_by_rainfall(rainfall["precip_prev_48h_mm"])
+    risk_tier = decision["risk_tier"]
 
+    feature_values = _build_feature_vector(proxies, rainfall, bundle["features"])
     model = bundle["model"]
     probability_unsafe = float(model.predict_proba([feature_values])[0][1])
-    is_unsafe = probability_unsafe >= 0.5  # same rule used to compute precision/recall in training
-    risk_tier = "Unsafe" if is_unsafe else "Safe"
-    confidence = probability_unsafe if is_unsafe else (1.0 - probability_unsafe)
+    # Confidence: how much the model agrees with the rule's decision. If the rule says
+    # Unsafe, a high probability_unsafe from the model IS agreement; if the rule says Safe,
+    # a LOW probability_unsafe is agreement - same shape the old model-decides confidence
+    # formula used, just now measuring agreement with the rule instead of the model's own
+    # certainty in its own decision.
+    confidence = probability_unsafe if risk_tier == "Unsafe" else (1.0 - probability_unsafe)
 
     oldest_proxy_time = min(reading.retrieved_at for reading in proxies.values())
 
@@ -77,10 +90,13 @@ def pull_reading() -> dict:
             },
             "rainfall_mm": rainfall,
             "rainfall_source": rainfall_source,
+            "decision_basis": "rainfall_rule",
+            "rule_threshold_mm": config.RAIN_FALLBACK_THRESHOLD_MM,
+            "model_probability_unsafe": round(probability_unsafe, 3),
         },
         "threshold_cfu_100ml": config.UNSAFE_THRESHOLD_CFU_100ML,
-        "model_version": "rf_B_post2021",
-        "regime": "B_post2021",
+        "model_version": "rf_nearshore",
+        "regime": "nearshore",
         "kind": "model_estimate",
     }
 
@@ -98,10 +114,9 @@ def _fetch_rainfall() -> tuple[dict, str]:
 
 
 def _build_feature_vector(proxies: dict, rainfall: dict, features_order: list[str]) -> list[float]:
-    # Live scoring gives one instantaneous turbidity reading; the model trained on daily
-    # mean/max. Using the live value for both is the best available live approximation -
-    # documented in BUILD-SPEC.md as a disclosed limitation.
-    turbidity = proxies["turbidity_fnu"].value
+    # Turbidity is still fetched (proxies["turbidity_fnu"]) and shown in evidence.proxies -
+    # it just isn't one of the near-shore model's 6 features (see app/model/train.py's
+    # NEARSHORE_FEATURES comment for why it was dropped as a model input).
     values = {
         "water_temp_c": proxies["water_temp_c"].value,
         "sp_conductance_uscm": proxies["sp_conductance_uscm"].value,
@@ -109,7 +124,5 @@ def _build_feature_vector(proxies: dict, rainfall: dict, features_order: list[st
         "ph": proxies["ph"].value,
         "precip_mm": rainfall["precip_mm"],
         "precip_prev_24h_mm": rainfall["precip_prev_24h_mm"],
-        "turbidity_fnu_mean": turbidity,
-        "turbidity_fnu_max": turbidity,
     }
     return [values[name] for name in features_order]

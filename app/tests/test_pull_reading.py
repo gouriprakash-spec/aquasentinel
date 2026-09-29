@@ -27,8 +27,8 @@ def _fake_proxies() -> dict:
     }
 
 
-def _fake_rainfall() -> dict:
-    return {"precip_mm": 0.0, "precip_prev_24h_mm": 2.0}
+def _fake_rainfall(precip_prev_48h_mm: float = 0.0) -> dict:
+    return {"precip_mm": 0.0, "precip_prev_24h_mm": 2.0, "precip_prev_48h_mm": precip_prev_48h_mm}
 
 
 def test_pull_reading_returns_the_shared_signal_contract(monkeypatch):
@@ -87,3 +87,90 @@ def test_uses_the_oldest_proxy_reading_as_the_reading_time(monkeypatch):
     reading = pr.pull_reading()
 
     assert reading["time"] == stale.isoformat()
+
+
+def test_the_rainfall_rule_decides_the_tier_not_the_model(monkeypatch):
+    """Core of the pivot: an obviously-Unsafe rainfall total must produce Unsafe regardless
+    of what the model's own probability happens to be."""
+    monkeypatch.setattr(pr, "fetch_usgs_proxies", lambda: _fake_proxies())
+    monkeypatch.setattr(pr, "fetch_nws_rainfall", lambda: _fake_rainfall(precip_prev_48h_mm=50.0))
+
+    reading = pr.pull_reading()
+
+    assert reading["risk_tier"] == "Unsafe"
+    assert reading["evidence"]["decision_basis"] == "rainfall_rule"
+
+
+def test_rainfall_at_exactly_the_threshold_is_unsafe():
+    """classify_by_rainfall uses >=, not > - pin the exact boundary (Review Focus)."""
+    from app import config
+    from app.model.rules_fallback import classify_by_rainfall
+
+    result = classify_by_rainfall(config.RAIN_FALLBACK_THRESHOLD_MM)
+
+    assert result["risk_tier"] == "Unsafe"
+
+
+class _StubModel:
+    """A predict_proba stub with a known, fixed output - the real trained model's exact
+    behavior on arbitrary fake proxy values isn't something to assert on without actually
+    verifying it, so these tests control probability_unsafe directly instead."""
+
+    def __init__(self, probability_unsafe: float):
+        self._probability_unsafe = probability_unsafe
+
+    def predict_proba(self, X):
+        return [[1.0 - self._probability_unsafe, self._probability_unsafe]]
+
+
+def _stub_bundle(probability_unsafe: float) -> dict:
+    return {
+        "model": _StubModel(probability_unsafe),
+        "features": [
+            "water_temp_c", "sp_conductance_uscm", "dissolved_oxygen_mgl",
+            "ph", "precip_mm", "precip_prev_24h_mm",
+        ],
+    }
+
+
+def test_confidence_is_high_when_rule_and_model_agree(monkeypatch):
+    monkeypatch.setattr(pr, "fetch_usgs_proxies", lambda: _fake_proxies())
+    monkeypatch.setattr(pr, "fetch_nws_rainfall", lambda: _fake_rainfall(precip_prev_48h_mm=0.0))  # rule: Safe
+    monkeypatch.setattr(pr, "_load_model", lambda: _stub_bundle(probability_unsafe=0.1))  # model agrees
+
+    reading = pr.pull_reading()
+
+    assert reading["risk_tier"] == "Safe"
+    assert reading["confidence"] == 0.9  # 1 - 0.1: high agreement
+
+
+def test_confidence_is_low_when_rule_and_model_disagree(monkeypatch):
+    monkeypatch.setattr(pr, "fetch_usgs_proxies", lambda: _fake_proxies())
+    monkeypatch.setattr(pr, "fetch_nws_rainfall", lambda: _fake_rainfall(precip_prev_48h_mm=0.0))  # rule: Safe
+    monkeypatch.setattr(pr, "_load_model", lambda: _stub_bundle(probability_unsafe=0.9))  # model disagrees
+
+    reading = pr.pull_reading()
+
+    assert reading["risk_tier"] == "Safe"  # the rule still decides the tier
+    assert reading["confidence"] == 0.1  # 1 - 0.9: low - the model thought this was likely Unsafe
+    assert reading["evidence"]["model_probability_unsafe"] == 0.9
+
+
+def test_evidence_still_carries_turbidity_even_though_the_model_no_longer_uses_it(monkeypatch):
+    monkeypatch.setattr(pr, "fetch_usgs_proxies", lambda: _fake_proxies())
+    monkeypatch.setattr(pr, "fetch_nws_rainfall", lambda: _fake_rainfall())
+
+    reading = pr.pull_reading()
+
+    assert reading["evidence"]["proxies"]["turbidity_fnu"] == 5.5
+
+
+def test_evidence_reports_the_rule_threshold_used(monkeypatch):
+    from app import config
+
+    monkeypatch.setattr(pr, "fetch_usgs_proxies", lambda: _fake_proxies())
+    monkeypatch.setattr(pr, "fetch_nws_rainfall", lambda: _fake_rainfall())
+
+    reading = pr.pull_reading()
+
+    assert reading["evidence"]["rule_threshold_mm"] == config.RAIN_FALLBACK_THRESHOLD_MM

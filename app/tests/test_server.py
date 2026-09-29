@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 
 from app import db, server
 from app.fhir import store as fhir_store
+from app.ingestion.nws import RainfallUnavailable
 from app.ingestion.usgs import UsgsDataUnavailable
 
 
@@ -70,6 +71,20 @@ def test_pull_reading_endpoint_scores_persists_and_returns(monkeypatch, tmp_path
 def test_pull_reading_endpoint_fails_closed_on_usgs_error(monkeypatch, tmp_path):
     def raise_unavailable():
         raise UsgsDataUnavailable("USGS is down")
+
+    monkeypatch.setattr(server, "pull_reading", raise_unavailable)
+    client = _client(monkeypatch, tmp_path)
+
+    response = client.post("/api/pull-reading")
+
+    assert response.status_code == 503
+    # Nothing should have been persisted from a failed pull.
+    assert db.get_recent_readings(db_path=tmp_path / "test.db") == []
+
+
+def test_pull_reading_endpoint_fails_closed_on_rainfall_error(monkeypatch, tmp_path):
+    def raise_unavailable():
+        raise RainfallUnavailable("48h rainfall window incomplete")
 
     monkeypatch.setattr(server, "pull_reading", raise_unavailable)
     client = _client(monkeypatch, tmp_path)
