@@ -17,10 +17,13 @@ from app import mcp_server
 
 
 def _fake_reading(risk_tier: str = "Safe") -> dict:
+    # "time" is computed relative to now, not a fixed past date - a fixed date would
+    # eventually trip the freshness check (config.FRESHNESS_LIMIT_HOURS) once enough real
+    # time passes, exactly the stale-fixture bug already fixed once in test_server.py.
     return {
         "location": "penns_landing",
         "location_name": "Penn's Landing, Center City tidal Delaware",
-        "time": "2026-09-27T12:00:00-04:00",
+        "time": datetime.now(timezone.utc).isoformat(),
         "risk_tier": risk_tier,
         "confidence": 0.82,
         "source": "aquasentinel",

@@ -6,6 +6,7 @@ timestamp for the same reading. One scoring output, read three ways, never compu
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timezone
 
 from fastapi.testclient import TestClient
 
@@ -14,10 +15,12 @@ from app.fhir import store as fhir_store
 
 
 def _fake_reading(risk_tier: str = "Unsafe") -> dict:
+    # "time" is computed relative to now, not a fixed past date - see the identical fix in
+    # test_mcp_server.py's _fake_reading() for why a fixed date eventually goes stale.
     return {
         "location": "penns_landing",
         "location_name": "Penn's Landing, Center City tidal Delaware",
-        "time": "2026-09-27T12:00:00-04:00",
+        "time": datetime.now(timezone.utc).isoformat(),
         "risk_tier": risk_tier,
         "confidence": 0.91,
         "source": "aquasentinel",
