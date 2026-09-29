@@ -134,10 +134,27 @@ new positive labels where the model is unsure) matters.
    excluded from both regime training files by the same drop-all-proxy-null rule.
    Earlier builds applied that rule to regime A only, leaving 4 feature-less rows in
    regime B — corrected 2026-09-19 (regime B: 64 → 60).
-8. **Turbidity raw not in `raw/`.** `usgs_iv_turbidity_raw.csv` is large and is not
+8. **Turbidity raw not in `raw/`.** (Restored 2026-09-27; daily aggregates match regime B exactly.) `usgs_iv_turbidity_raw.csv` is large and is not
    currently kept in `raw/`, so an offline rebuild reproduces every column except
    turbidity (the builder now degrades gracefully and warns). Run
    `build_dataset.py --fetch` to restore turbidity and rebuild end-to-end.
+
+## Addendum 2026-09-27 — `data/regime_B_plus_nearshore.csv` (proposed Milestone 1b)
+
+Regime B (Ben Franklin Bridge + Navy Yard, 60 rows) plus 14 Penn's Landing near-shore label-days
+from the turbidity era. 74 rows / 41 distinct dates / 23 unsafe. Existing CSVs are unchanged.
+Built by `nearshore_experiment/build_nearshore_labels.py` then `build_combined_regime_B.py`,
+from `../../drbc_nearshore_ecoli_2019_2025.csv` (DRBC near-shore program).
+
+- Same columns as regime B, plus `nearshore` (1 = Penn's Landing near-shore, 0 = channel station)
+  and `source_sites` (DRBC site IDs behind each row).
+- Near-shore rows collapse DRBC-DEL-LL, DRBC-6107-049..055 and DRBC-C1..C5 to one row per date
+  (MAX value). The 2024 rows take the max over up to 7 sites, which inflates "unsafe".
+- Near-shore values are MPN/100mL (`unit` says so) but stored in `ecoli_cfu_100ml`; treated as
+  equivalent at the 235 threshold.
+- **Split any cross-validation by `date`.** BFB and Navy Yard share all 30 dates and identical gauge
+  features, so row-level folds leak (see `nearshore_experiment/README.md`).
+- 6 regime B rows have a blank `unit` (inherited from the source).
 
 ## Provenance
 

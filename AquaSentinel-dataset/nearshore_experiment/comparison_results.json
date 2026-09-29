@@ -1,0 +1,82 @@
+{
+ "E1_channel_only_cv": {
+  "channel": {
+   "precision": 0.145,
+   "recall": 0.051,
+   "f1": 0.075,
+   "n": 310,
+   "pos": 45
+  }
+ },
+ "E2_channel_model_on_nearshore": {
+  "precision": 0.71,
+  "recall": 0.26,
+  "f1": 0.38,
+  "n": 69,
+  "pos": 30
+ },
+ "E3_nearshore_only_cv": {
+  "nearshore": {
+   "precision": 0.605,
+   "recall": 0.5,
+   "f1": 0.547,
+   "n": 69,
+   "pos": 30
+  }
+ },
+ "E4_pooled_all_cv": {
+  "nearshore": {
+   "precision": 0.718,
+   "recall": 0.517,
+   "f1": 0.6,
+   "n": 69,
+   "pos": 30
+  },
+  "channel": {
+   "precision": 0.204,
+   "recall": 0.089,
+   "f1": 0.123,
+   "n": 310,
+   "pos": 45
+  }
+ },
+ "E5_pooled_BFB_nearshore_cv": {
+  "nearshore": {
+   "precision": 0.707,
+   "recall": 0.53,
+   "f1": 0.605,
+   "n": 69,
+   "pos": 30
+  },
+  "BFB": {
+   "precision": 0.35,
+   "recall": 0.145,
+   "f1": 0.203,
+   "n": 155,
+   "pos": 29
+  }
+ },
+ "RULE_rain48_ge_2.5_nearshore": {
+  "precision": 0.692,
+  "recall": 0.6,
+  "f1": 0.643,
+  "n": 69,
+  "pos": 30
+ },
+ "RULE_rain48_ge_2.5_channel": {
+  "precision": 0.359,
+  "recall": 0.622,
+  "f1": 0.455,
+  "n": 310,
+  "pos": 45
+ },
+ "S1_nearshore_only_cv_no2024": {
+  "nearshore": {
+   "precision": 0.667,
+   "recall": 0.521,
+   "f1": 0.584,
+   "n": 63,
+   "pos": 24
+  }
+ }
+}
