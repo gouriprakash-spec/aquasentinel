@@ -37,7 +37,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import precision_score, recall_score, roc_curve
-from sklearn.model_selection import StratifiedKFold
+from sklearn.model_selection import StratifiedGroupKFold, StratifiedKFold
 from sklearn.pipeline import Pipeline
 
 from app import config
@@ -99,45 +99,93 @@ def _cv_splitter(y: np.ndarray) -> StratifiedKFold:
     return StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=RANDOM_STATE)
 
 
-def evaluate_model() -> dict:
-    """Out-of-fold predictions for RF and the LR baseline, from the SAME folds, so the
-    two models are compared on identical splits.
+def _group_cv_n_splits(y: np.ndarray, groups: np.ndarray) -> int:
+    """How many folds a date-grouped split can safely use. Regime B has 2 rows per date
+    (Navy Yard + Ben Franklin Bridge), so counting rows the way the old row-level splitter
+    did would overcount - StratifiedGroupKFold needs enough DISTINCT DATES in each class,
+    not enough rows."""
+    n_pos_groups = len(set(groups[y == 1]))
+    n_neg_groups = len(set(groups[y == 0]))
+    n_splits = min(MAX_SPLITS, n_pos_groups, n_neg_groups)
+    if n_splits < 2:
+        raise ValueError(f"Too few positive/negative date-groups to cross-validate: {n_pos_groups} vs {n_neg_groups}")
+    return n_splits
+
+
+def _derive_rule_threshold(df_train: "pd.DataFrame") -> float:
+    """Youden's-J threshold on precip_prev_48h_mm, fit on a fold's TRAINING rows only, so
+    the rule's fold score is out-of-sample the same way the RF's is (spec Step 1)."""
+    sub = df_train.dropna(subset=["precip_prev_48h_mm", TARGET])
+    fpr, tpr, thresholds = roc_curve(sub[TARGET].astype(int), sub["precip_prev_48h_mm"])
+    return float(thresholds[int(np.argmax(tpr - fpr))])
+
+
+def evaluate_model(n_seeds: int = 10) -> dict:
+    """Out-of-fold predictions for RF, the LR baseline, and the rainfall rule, from
+    date-grouped folds so no date's rows split across train and test (spec Section 2b.1).
+    Also reports the original row-level (leaky) number, kept for the record, not deleted.
     """
     df = pd.read_csv(MODEL_DATA_FILE)
     X = df[FEATURES].to_numpy()
     y = df[TARGET].astype(int).to_numpy()
+    dates = df["date"].to_numpy()
     log_target = np.log10(df["ecoli_cfu_100ml"].clip(lower=1)).to_numpy()
     unsafe_log_threshold = np.log10(config.UNSAFE_THRESHOLD_CFU_100ML)
 
-    cv = _cv_splitter(y)
-    rf_oof_pred = np.empty(len(y), dtype=int)
-    lr_oof_pred = np.empty(len(y), dtype=int)
+    # --- Honest, date-grouped CV (averaged over seeds - a single split is noisy at n=60) ---
+    n_splits = _group_cv_n_splits(y, dates)
+    rf_p, rf_r, lr_p, lr_r, rule_p, rule_r = [], [], [], [], [], []
+    for seed in range(n_seeds):
+        cv = StratifiedGroupKFold(n_splits=n_splits, shuffle=True, random_state=seed)
+        rf_oof = np.empty(len(y), dtype=int)
+        lr_oof = np.empty(len(y), dtype=int)
+        rule_oof = np.empty(len(y), dtype=int)
+        for train_idx, test_idx in cv.split(X, y, groups=dates):
+            rf = _make_rf_pipeline()
+            rf.fit(X[train_idx], y[train_idx])
+            rf_oof[test_idx] = rf.predict(X[test_idx])
 
+            lr = _make_lr_pipeline()
+            lr.fit(X[train_idx], log_target[train_idx])
+            lr_oof[test_idx] = (lr.predict(X[test_idx]) >= unsafe_log_threshold).astype(int)
+
+            fold_threshold = _derive_rule_threshold(df.iloc[train_idx])
+            rule_oof[test_idx] = (df.iloc[test_idx]["precip_prev_48h_mm"] >= fold_threshold).astype(int)
+
+        rf_p.append(precision_score(y, rf_oof, zero_division=0)); rf_r.append(recall_score(y, rf_oof, zero_division=0))
+        lr_p.append(precision_score(y, lr_oof, zero_division=0)); lr_r.append(recall_score(y, lr_oof, zero_division=0))
+        rule_p.append(precision_score(y, rule_oof, zero_division=0)); rule_r.append(recall_score(y, rule_oof, zero_division=0))
+
+    # --- Superseded row-level CV, kept for the record (this is the ORIGINAL implementation) ---
+    cv = _cv_splitter(y)
+    rf_oof_leaky = np.empty(len(y), dtype=int)
     for train_idx, test_idx in cv.split(X, y):
         rf = _make_rf_pipeline()
         rf.fit(X[train_idx], y[train_idx])
-        rf_oof_pred[test_idx] = rf.predict(X[test_idx])
-
-        lr = _make_lr_pipeline()
-        lr.fit(X[train_idx], log_target[train_idx])
-        log_pred = lr.predict(X[test_idx])
-        lr_oof_pred[test_idx] = (log_pred >= unsafe_log_threshold).astype(int)
+        rf_oof_leaky[test_idx] = rf.predict(X[test_idx])
 
     metrics = {
         "n_rows": len(df),
         "n_unsafe": int(y.sum()),
-        "cv_folds": cv.n_splits,
+        "cv_folds": n_splits,
         "random_forest": {
-            "precision": round(precision_score(y, rf_oof_pred, zero_division=0), 3),
-            "recall": round(recall_score(y, rf_oof_pred, zero_division=0), 3),
+            "precision": round(float(np.mean(rf_p)), 3),
+            "recall": round(float(np.mean(rf_r)), 3),
+        },
+        "random_forest_superseded_leaky_row_level_cv": {
+            "precision": round(precision_score(y, rf_oof_leaky, zero_division=0), 3),
+            "recall": round(recall_score(y, rf_oof_leaky, zero_division=0), 3),
         },
         "linear_regression_baseline": {
-            "precision": round(precision_score(y, lr_oof_pred, zero_division=0), 3),
-            "recall": round(recall_score(y, lr_oof_pred, zero_division=0), 3),
+            "precision": round(float(np.mean(lr_p)), 3),
+            "recall": round(float(np.mean(lr_r)), 3),
+        },
+        "rainfall_rule": {
+            "precision": round(float(np.mean(rule_p)), 3),
+            "recall": round(float(np.mean(rule_r)), 3),
         },
     }
 
-    # Fit the final RF on every row and save it for the scoring pipeline.
     final_rf = _make_rf_pipeline()
     final_rf.fit(X, y)
     ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
