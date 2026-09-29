@@ -84,7 +84,7 @@ def build_risk_observation(reading: dict, proxy_entries: list[dict]) -> dict:
             "resourceType": "Observation",
             "id": str(uuid.uuid4()),
             "status": "preliminary",
-            "method": {"text": "Estimated (modeled) risk"},
+            "method": {"text": "Estimated (rainfall-rule-based) risk, model-informed confidence"},
             "code": {"text": "E. coli risk tier estimate"},
             "subject": {"reference": f"Location/{LOCATION_ID}"},
             "effectiveDateTime": reading["time"],

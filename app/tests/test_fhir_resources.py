@@ -93,3 +93,19 @@ def test_risk_observation_value_matches_tier():
     coding = risk_entry["resource"]["valueCodeableConcept"]["coding"][0]
     assert coding["code"] == "safe"
     assert coding["system"] == resources.RISK_TIER_SYSTEM
+
+
+def test_risk_observation_method_describes_the_rule_not_random_forest():
+    """Milestone 1b (2026-09-27): the rule decides the tier now, not a random forest - a
+    person reading this Observation off the wire must not conclude a model is deciding."""
+    flag = resources.build_flag("flag-1", "Unsafe", "active", "2026-06-01T12:00:00+00:00", None)
+    bundle = resources.build_bundle(_reading(), flag)
+
+    risk_entry = next(
+        e for e in bundle["entry"]
+        if e["resource"]["resourceType"] == "Observation" and "method" in e["resource"]
+    )
+    method_text = risk_entry["resource"]["method"]["text"]
+
+    assert "random forest" not in method_text.lower()
+    assert "rule" in method_text.lower()
