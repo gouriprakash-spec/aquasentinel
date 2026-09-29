@@ -269,8 +269,15 @@ def derive_low_confidence_cutoff(n_seeds: int = 10) -> float:
     The rule itself needs no cross-validation (it's a fixed threshold, not fit per fold); the
     model's probability must come from out-of-fold predictions so it isn't cheating by having
     seen that row during training.
+
+    Fail closed (CLAUDE.md): a row with no precip_prev_48h_mm can't have its rule outcome
+    evaluated at all, so it is dropped before anything else - same guard
+    derive_rain_fallback_threshold() uses on the same column. Without this, NumPy's
+    `NaN >= threshold` silently evaluates to False, which would fold that row in as a fake
+    "rule said Safe" data point instead of excluding it.
     """
     df = pd.read_csv(NEARSHORE_DATA_FILE)
+    df = df.dropna(subset=["precip_prev_48h_mm", NEARSHORE_TARGET])
     X = df[NEARSHORE_FEATURES].to_numpy()
     y = df[NEARSHORE_TARGET].astype(int).to_numpy()
     dates = df["date"].to_numpy()

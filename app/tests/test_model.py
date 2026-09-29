@@ -146,6 +146,36 @@ def test_low_confidence_cutoff_is_derived_from_data_not_invented():
     assert 0.0 <= cutoff <= 1.0
 
 
+def test_low_confidence_cutoff_excludes_rows_with_missing_rule_input_not_silently_safe(tmp_path, monkeypatch):
+    """Fail-closed pin (CLAUDE.md: missing/malformed input -> excluded or an error, never a
+    silent default): a NaN precip_prev_48h_mm must be dropped from the derivation, not
+    silently treated as "rule says Safe" (NumPy's `NaN >= threshold` is `False`).
+
+    Proven by contamination: append one extra row - copied from a real row, but with
+    precip_prev_48h_mm set to NaN and a brand-new date - to the real 69-row dataset. If the
+    guard works, that row is fully excluded and the result is IDENTICAL to the uncontaminated
+    baseline (same rows go into the same folds). If the guard is missing, the extra row is
+    silently scored as a real "rule said Safe" data point and the result changes.
+    """
+    import pandas as pd
+
+    baseline_cutoff = train.derive_low_confidence_cutoff()
+
+    df = pd.read_csv(train.NEARSHORE_DATA_FILE)
+    contaminated_row = df.iloc[[0]].copy()
+    contaminated_row["date"] = "2099-01-01"  # cannot collide with any real near-shore date
+    contaminated_row["precip_prev_48h_mm"] = float("nan")
+    contaminated = pd.concat([df, contaminated_row], ignore_index=True)
+
+    contaminated_path = tmp_path / "nearshore_with_nan_rule_input.csv"
+    contaminated.to_csv(contaminated_path, index=False)
+    monkeypatch.setattr(train, "NEARSHORE_DATA_FILE", contaminated_path)
+
+    cutoff_with_nan_row = train.derive_low_confidence_cutoff()
+
+    assert cutoff_with_nan_row == baseline_cutoff
+
+
 def test_low_confidence_cutoff_is_not_yet_consumed_anywhere_else():
     """Review Focus: config.LOW_CONFIDENCE_CUTOFF moves from None to a real number in this
     task, but nothing should start reading it - that happens when the Sampling Coordinator
