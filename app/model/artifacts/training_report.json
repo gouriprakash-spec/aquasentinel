@@ -26,5 +26,15 @@
     "n_unsafe": 49,
     "precision": 0.372,
     "recall": 0.653
-  }
+  },
+  "nearshore_model": {
+    "n_rows": 69,
+    "n_unsafe": 30,
+    "cv_folds": 5,
+    "random_forest": {
+      "precision": 0.597,
+      "recall": 0.497
+    }
+  },
+  "low_confidence_cutoff": 0.7466666666666666
 }

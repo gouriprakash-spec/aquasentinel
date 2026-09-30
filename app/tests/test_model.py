@@ -193,3 +193,26 @@ def test_low_confidence_cutoff_is_not_yet_consumed_anywhere_else():
             hits.append(str(py_file))
 
     assert hits == []
+
+
+def test_documented_train_command_regenerates_the_nearshore_model_and_cutoff(tmp_path, monkeypatch):
+    """Final-review finding: `python -m app.model.train` (CLAUDE.md's documented command)
+    never ran evaluate_nearshore_model() or derive_low_confidence_cutoff(), so the model live
+    scoring loads (rf_nearshore.joblib) and its metrics were only reproducible via ad-hoc
+    scripts. main() must regenerate the artifact and record both results in the report -
+    and the derived cutoff must still equal the hand-copied config value."""
+    import json
+
+    monkeypatch.setattr(train, "ARTIFACTS_DIR", tmp_path)
+    # The channel-model and rain-threshold steps have their own tests above; stub them so
+    # this test is only about what main() wires together.
+    monkeypatch.setattr(train, "evaluate_model", lambda: {"stub": "channel"})
+    monkeypatch.setattr(train, "derive_rain_fallback_threshold", lambda: {"threshold_mm": 2.5})
+
+    train.main()
+
+    report = json.loads((tmp_path / "training_report.json").read_text())
+    assert report["nearshore_model"]["n_rows"] == 69
+    assert set(report["nearshore_model"]["random_forest"]) == {"precision", "recall"}
+    assert report["low_confidence_cutoff"] == config.LOW_CONFIDENCE_CUTOFF
+    assert (tmp_path / "rf_nearshore.joblib").exists()

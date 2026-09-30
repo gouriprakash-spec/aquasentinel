@@ -351,6 +351,24 @@ def main() -> None:
         "automatically) so the change is visible in a diff."
     )
 
+    # Milestone 1b: the near-shore model is the one live scoring actually loads
+    # (app/scoring/pull_reading.py -> rf_nearshore.joblib), so the documented command must
+    # regenerate it and its honest metrics - not only ad-hoc scripts.
+    print(f"--- Near-shore confidence-signal model ({NEARSHORE_MODEL_NAME}) ---")
+    nearshore = evaluate_nearshore_model()
+    report["nearshore_model"] = nearshore
+    print(json.dumps(nearshore, indent=2))
+
+    print("--- Low-confidence cutoff (rule/model agreement, near-shore) ---")
+    cutoff = derive_low_confidence_cutoff()
+    report["low_confidence_cutoff"] = cutoff
+    print(json.dumps(cutoff, indent=2))
+    print(
+        f"\nNOTE: the low-confidence cutoff derived as {cutoff}. Like the rain threshold, it "
+        "is copied into app/config.py by hand (never written automatically) - compare it "
+        "there; a mismatch needs a decision, not a silent edit."
+    )
+
     ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
     report_path = ARTIFACTS_DIR / "training_report.json"
     report_path.write_text(json.dumps(report, indent=2))
