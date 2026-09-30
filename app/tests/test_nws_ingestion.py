@@ -1,15 +1,20 @@
 """Tests for app/ingestion/nws.py's rainfall windowing.
 
-The two things most likely to be wrong here, per BUILD-SPEC.md's own disclosed
-limitations: (1) summing every 5-minute observation instead of 3h-spaced marks would
-count the same rain many times over, and (2) a `null` precipitationLast3Hours must only
-be treated as 0mm when the observation's own weather description confirms no rain.
+The fixtures here are shaped like REAL KPHL data (verified against a live week,
+2026-09-23..30), not like the idealized feed the previous tests assumed. The old fixtures put
+a `precipitationLast3Hours` value on every 5-minute record; in reality that field was filled
+in on 8 of 2241 observations, which is how the old design could silently return 0.0mm for a
+week with ~53mm of rain while every test still passed. Realistic shape:
 
-precip_prev_48h_mm (Milestone 1b, 2026-09-27) needs data further back than a single
-`limit=500` request reaches, so fetch_antecedent_rainfall() now makes two requests: the
-existing recent one, and a second `start`/`end`-bounded one for the older window. Tests
-that need 48h coverage use _full_observations() to synthesize both windows; tests that
-only ever cared about the 24h path keep using the older, shorter fixture unchanged.
+- A record every 5 minutes with an empty `rawMessage` and every precip field null.
+- A routine METAR at :54 each hour. `precipitationLastHour` has a value only when it rained
+  that hour; otherwise it's null and the raw METAR simply has no `P` group in its remarks.
+- During rain, mid-hour SPECI reports whose `precipitationLastHour` is a running subtotal of
+  the same hour (must NOT be added on top of the :54 report).
+- `precipitationLast3Hours` / `precipitationLast6Hours` null throughout.
+
+The mock server honors `start`/`end`/`limit` (newest first, capped at 500) the way the real
+endpoint does, so request-window bugs show up as missing hours, not silently.
 """
 
 from __future__ import annotations
@@ -21,162 +26,264 @@ import pytest
 
 from app.ingestion.nws import RainfallUnavailable, fetch_antecedent_rainfall
 
-NOW = datetime(2026, 9, 25, 21, 0, 0, tzinfo=timezone.utc)  # 5pm US/Eastern (EDT, UTC-4)
+# 5pm US/Eastern (EDT, UTC-4). Local midnight today = 2026-09-25T04:00Z.
+NOW = datetime(2026, 9, 25, 21, 0, 0, tzinfo=timezone.utc)
+TODAY_MIDNIGHT = datetime(2026, 9, 25, 4, 0, tzinfo=timezone.utc)
+YESTERDAY_MIDNIGHT = TODAY_MIDNIGHT - timedelta(days=1)  # Sep 24 local
+DAY_BEFORE_MIDNIGHT = TODAY_MIDNIGHT - timedelta(days=2)  # Sep 23 local
+FIXTURE_START = NOW - timedelta(hours=80)
+
+_NULL_PRECIP = {"unitCode": "wmoUnit:mm", "value": None, "qualityControl": "Z"}
 
 
-def _observation(
-    timestamp: datetime,
-    precip_mm: float | None,
-    description: str = "Partly Cloudy",
-    present_weather: list | None = None,
-) -> dict:
+def _report_time(midnight: datetime, local_hour: int) -> datetime:
+    """The :54 routine report closing the given local hour of the day that starts at
+    `midnight` (local_hour=0 -> the 00:54 report)."""
+    return midnight + timedelta(hours=local_hour, minutes=54)
+
+
+def _raw_metar(ts: datetime, rain_mm: float | None, remarks_extra: str = "") -> str:
+    """A realistic KPHL METAR. The P group (hundredths of an inch) appears only when it
+    rained; other remark groups that start with P or contain digits are included on
+    purpose so a sloppy parser would trip over them."""
+    stamp = ts.strftime("%d%H%MZ")
+    p_group = f" P{round(rain_mm / 0.254):04d}" if rain_mm else ""
+    return (
+        f"KPHL {stamp} 01016KT 10SM OVC030 17/13 A2982 RMK AO2 PK WND 01043/0631 "
+        f"SLP102{p_group}{remarks_extra} T01830072 $"
+    )
+
+
+def _record(ts: datetime, raw: str = "", last_hour: float | None = None) -> dict:
     return {
         "properties": {
-            "timestamp": timestamp.isoformat(),
-            "textDescription": description,
-            "presentWeather": present_weather or [],
-            "precipitationLast3Hours": {"unitCode": "wmoUnit:mm", "value": precip_mm},
+            "timestamp": ts.isoformat(),
+            "rawMessage": raw,
+            "textDescription": "Cloudy",
+            "presentWeather": [],
+            "precipitationLastHour": {"unitCode": "wmoUnit:mm", "value": last_hour},
+            "precipitationLast3Hours": dict(_NULL_PRECIP),
+            "precipitationLast6Hours": dict(_NULL_PRECIP),
         }
     }
 
 
-def _full_observations(hours: int = 76, precip_mm: float = 0.5) -> list[dict]:
-    """Enough 5-minute observations to cover every 3h mark back to `hours` before NOW -
-    enough for precip_mm, precip_prev_24h_mm, AND precip_prev_48h_mm to all resolve."""
-    return [
-        _observation(NOW - timedelta(minutes=5 * i), precip_mm=precip_mm)
-        for i in range(0, hours * 12)
-    ]
-
-
-def _observations_between(
-    hours_back_min: int, hours_back_max: int, precip_mm: float
+def _station(
+    rain: dict[datetime, float] | None = None,
+    overrides: dict[datetime, dict | None] | None = None,
+    start: datetime = FIXTURE_START,
+    end: datetime = NOW,
 ) -> list[dict]:
-    """5-minute observations covering ONLY `hours_back_min`..`hours_back_max` hours before
-    NOW - simulates a genuinely distinct `older` request whose reach doesn't overlap a
-    `recent` fixture that only goes back to `hours_back_min` hours (or less). Used to prove
-    a merge actually happened: if `recent` and `older` never share a timestamp and each
-    carries its own precip value, a correct total can only come from combining both."""
-    return [
-        _observation(NOW - timedelta(minutes=m), precip_mm=precip_mm)
-        for m in range(hours_back_min * 60, hours_back_max * 60 + 1, 5)
-    ]
+    """Synthesize every record KPHL would publish in [start, end].
+
+    rain: {routine_report_time: mm in the hour ending then}; all other hours are dry.
+    overrides: {routine_report_time: replacement record, or None to drop that report}.
+    """
+    rain = rain or {}
+    overrides = overrides or {}
+    records = []
+    ts = start.replace(minute=0, second=0, microsecond=0)
+    while ts <= end:
+        if start <= ts:
+            if ts.minute == 54:
+                if ts in overrides:
+                    if overrides[ts] is not None:
+                        records.append(overrides[ts])
+                else:
+                    mm = rain.get(ts)
+                    records.append(_record(ts, raw=_raw_metar(ts, mm), last_hour=mm))
+                    if mm:
+                        # A SPECI 24 minutes earlier carrying a subtotal of the same hour.
+                        speci = ts - timedelta(minutes=24)
+                        records.append(_record(speci, raw=_raw_metar(speci, mm / 2), last_hour=mm / 2))
+            elif ts.minute % 5 == 0:
+                records.append(_record(ts))  # routine 5-minute record: no precip at all
+        ts += timedelta(minutes=1)
+    return records
 
 
-def _client_for(recent: list[dict], older: list[dict] | None = None) -> httpx.Client:
-    """Simulates NWS's two-request shape: a plain `limit=500` request (recent) and a
-    `start`/`end`-bounded request (older). Defaults `older` to `recent` so tests that don't
-    care about the distinction can pass one list, as before."""
-    older = recent if older is None else older
+def _client_for(records: list[dict], requests: list[httpx.Request] | None = None) -> httpx.Client:
+    """Mock api.weather.gov: filter by start/end, newest first, capped at `limit`."""
 
     def handler(request: httpx.Request) -> httpx.Response:
-        if "start" in request.url.params:
-            return httpx.Response(200, json={"features": older})
-        return httpx.Response(200, json={"features": recent})
+        if requests is not None:
+            requests.append(request)
+        params = request.url.params
+        start = datetime.fromisoformat(params["start"].replace("Z", "+00:00")) if "start" in params else None
+        end = datetime.fromisoformat(params["end"].replace("Z", "+00:00")) if "end" in params else None
+        limit = int(params.get("limit", 500))
+        selected = []
+        for record in records:
+            ts = datetime.fromisoformat(record["properties"]["timestamp"])
+            if (start is None or ts >= start) and (end is None or ts <= end):
+                selected.append(record)
+        selected.sort(key=lambda r: r["properties"]["timestamp"], reverse=True)
+        return httpx.Response(200, json={"features": selected[:limit]})
 
     return httpx.Client(transport=httpx.MockTransport(handler))
 
 
-def test_does_not_double_count_overlapping_5_minute_observations():
-    """Every observation reports 1.0mm for its OWN rolling 3h window. If the code just
-    summed every 5-minute record in range, 24h would give ~288mm (288 records). The
-    correct mark-based total is 8mm (8 non-overlapping 3h marks x 1.0mm)."""
-    observations = _full_observations(hours=76, precip_mm=1.0)
-
-    result = fetch_antecedent_rainfall(client=_client_for(observations), now=NOW)
-
-    assert result["precip_prev_24h_mm"] == 8.0
+# --- The Critical finding's regression -------------------------------------------------
 
 
-def test_precip_prev_48h_mm_sums_the_two_prior_calendar_days():
+def test_counts_rain_reported_only_in_precipitation_last_hour():
+    """The exact shape that broke the old design: real rain is in `precipitationLastHour`
+    on the :54 reports, and `precipitationLast3Hours` is null everywhere. The old
+    3h-mark method read those nulls as 0mm and returned 0.0 here (a false Safe); the
+    correct 48h total is 3.0mm, which crosses the 2.5mm rule."""
+    rain = {
+        _report_time(YESTERDAY_MIDNIGHT, 10): 1.5,
+        _report_time(DAY_BEFORE_MIDNIGHT, 15): 1.5,
+    }
+
+    result = fetch_antecedent_rainfall(client=_client_for(_station(rain)), now=NOW)
+
+    assert result["precip_prev_48h_mm"] == 3.0
+
+
+def test_does_not_add_speci_subtotals_or_5_minute_records():
+    """Each rainy hour also has a SPECI carrying half the hour's rain as a subtotal. Only
+    the :54 routine report may count, or rain gets counted 1.5x."""
+    rain = {_report_time(YESTERDAY_MIDNIGHT, h): 1.0 for h in range(0, 24)}
+
+    result = fetch_antecedent_rainfall(client=_client_for(_station(rain)), now=NOW)
+
+    assert result["precip_prev_48h_mm"] == 24.0
+
+
+# --- Windows ---------------------------------------------------------------------------
+
+
+def test_precip_prev_48h_mm_is_the_two_prior_calendar_days_only():
     """Matches training's window (build_dataset.py:load_precip()): the two FULL local
-    calendar days before today, not a rolling 48h-from-now window. 8 marks/day x 2 days x
-    1.0mm/mark = 16.0mm, regardless of how much (if any) rain fell today."""
-    observations = _full_observations(hours=76, precip_mm=1.0)
+    calendar days before today. Rain today and three days ago must be excluded, and the
+    first/last hour of each day must be included."""
+    rain = {
+        _report_time(DAY_BEFORE_MIDNIGHT, 0): 1.0,   # first hour of the window
+        _report_time(YESTERDAY_MIDNIGHT, 23): 2.0,   # last hour of the window
+        _report_time(TODAY_MIDNIGHT, 0): 4.0,        # today - excluded
+        DAY_BEFORE_MIDNIGHT - timedelta(minutes=6): 8.0,  # 23:54 three days ago - excluded
+    }
 
-    result = fetch_antecedent_rainfall(client=_client_for(observations), now=NOW)
+    result = fetch_antecedent_rainfall(client=_client_for(_station(rain)), now=NOW)
 
-    assert result["precip_prev_48h_mm"] == 16.0
-
-
-def test_precip_prev_48h_mm_only_resolves_by_combining_both_requests():
-    """Regression guard for this task's entire stated purpose: if `nws.py` ever silently
-    dropped `older_payload` (e.g. someone simplifies
-    `_parse_observations(recent_payload) + _parse_observations(older_payload)` back down
-    to just `recent_payload`), this test must fail - not any of the tests above it, which
-    all pass the SAME 76h fixture as both `recent` and `older`, so `recent` alone already
-    covers everything they need regardless of whether `older` was ever consulted.
-
-    Here `recent` (38h, matching NWS's real single-request ceiling) and `older` (a
-    disjoint 39h-76h slice, matching the real OLDER_WINDOW bounds) never share a
-    timestamp and carry DIFFERENT precip values, so the expected 48h total (yesterday's
-    8 marks from `recent` at 1.0mm + the day-before's 8 marks from `older` at 2.0mm) can
-    only be correct if both were genuinely combined - dropping `older` would make the
-    day-before-yesterday marks unresolvable (a raise, not a silently-passing wrong sum),
-    and using only `older` would give the wrong total for yesterday."""
-    recent = _full_observations(hours=38, precip_mm=1.0)  # covers yesterday, not further
-    older = _observations_between(39, 76, precip_mm=2.0)  # covers only the day before that
-
-    result = fetch_antecedent_rainfall(client=_client_for(recent, older=older), now=NOW)
-
-    assert result["precip_prev_48h_mm"] == 24.0  # 8*1.0 (yesterday) + 8*2.0 (day before)
+    assert result["precip_prev_48h_mm"] == 3.0
 
 
-def test_fails_closed_when_the_older_window_is_incomplete():
-    """The `start`/`end` request comes back too short to cover both prior calendar days -
-    must fail closed, never a partial 48h figure."""
-    recent = _full_observations(hours=40, precip_mm=1.0)
-    older = _full_observations(hours=5, precip_mm=1.0)  # nowhere near enough
+def test_precip_mm_and_24h_windows():
+    """NOW is 21:00Z; with the 45-minute publishing allowance, the latest report counted is
+    19:54Z (15:54 local). precip_mm = today's reports up to then; precip_prev_24h_mm = the
+    24 reports ending then (20:54Z yesterday .. 19:54Z today)."""
+    latest = datetime(2026, 9, 25, 19, 54, tzinfo=timezone.utc)
+    rain = {
+        latest: 1.0,                                  # today and within 24h
+        _report_time(TODAY_MIDNIGHT, 0): 2.0,         # today and within 24h
+        latest - timedelta(hours=23): 4.0,            # yesterday, oldest hour in 24h
+        latest - timedelta(hours=24): 8.0,            # just outside 24h
+        latest + timedelta(hours=1): 16.0,            # 20:54Z: not yet expected, ignored
+    }
+
+    result = fetch_antecedent_rainfall(client=_client_for(_station(rain)), now=NOW)
+
+    assert result["precip_mm"] == 3.0
+    assert result["precip_prev_24h_mm"] == 7.0
+
+
+def test_dry_hours_resolve_to_zero_from_the_raw_metar():
+    """A null `precipitationLastHour` with a raw METAR that has no P group is a real 0mm
+    (METAR omits the group when it didn't rain). Other remark tokens (SLP..., PK WND) must
+    not be mistaken for a precip group."""
+    result = fetch_antecedent_rainfall(client=_client_for(_station()), now=NOW)
+
+    assert result == {"precip_mm": 0.0, "precip_prev_24h_mm": 0.0, "precip_prev_48h_mm": 0.0}
+
+
+def test_null_value_with_p_group_in_raw_metar_is_read_from_the_raw_text():
+    """Seen live twice in one week: NWS's parsed `precipitationLastHour` was null while the
+    raw METAR said P0002 (0.02in). Treating that null as 0 would undercount."""
+    ts = _report_time(YESTERDAY_MIDNIGHT, 12)
+    report = _record(ts, raw=_raw_metar(ts, 3 * 0.254), last_hour=None)  # P0003 = 0.762mm
+
+    result = fetch_antecedent_rainfall(
+        client=_client_for(_station(overrides={ts: report})), now=NOW
+    )
+
+    assert result["precip_prev_48h_mm"] == 0.8
+
+
+# --- Fail closed -----------------------------------------------------------------------
+
+
+def test_fails_closed_when_null_value_and_raw_metar_is_empty():
+    """23 of 168 live routine reports looked like this. Nothing confirms the hour was dry,
+    so it must raise - never count it as 0mm."""
+    ts = _report_time(YESTERDAY_MIDNIGHT, 7)
+    records = _station(overrides={ts: _record(ts, raw="", last_hour=None)})
+
+    with pytest.raises(RainfallUnavailable, match="no raw METAR"):
+        fetch_antecedent_rainfall(client=_client_for(records), now=NOW)
+
+
+def test_fails_closed_when_rain_gauge_not_operating():
+    ts = _report_time(DAY_BEFORE_MIDNIGHT, 3)
+    report = _record(ts, raw=_raw_metar(ts, None, remarks_extra=" PNO"), last_hour=None)
+
+    with pytest.raises(RainfallUnavailable, match="PNO"):
+        fetch_antecedent_rainfall(client=_client_for(_station(overrides={ts: report})), now=NOW)
+
+
+def test_fails_closed_when_rain_amount_indeterminable():
+    ts = _report_time(DAY_BEFORE_MIDNIGHT, 3)
+    report = _record(ts, raw=_raw_metar(ts, None, remarks_extra=" P////"), last_hour=None)
+
+    with pytest.raises(RainfallUnavailable, match="indeterminable"):
+        fetch_antecedent_rainfall(client=_client_for(_station(overrides={ts: report})), now=NOW)
+
+
+def test_fails_closed_when_raw_metar_has_no_remarks():
+    ts = _report_time(YESTERDAY_MIDNIGHT, 3)
+    report = _record(ts, raw="KPHL 240754Z 01016KT 10SM OVC030 17/13 A2982", last_hour=None)
+
+    with pytest.raises(RainfallUnavailable, match="remarks"):
+        fetch_antecedent_rainfall(client=_client_for(_station(overrides={ts: report})), now=NOW)
+
+
+def test_fails_closed_when_a_routine_report_is_missing():
+    """The 5-minute records around the hour are all present, but the :54 report itself is
+    not - its rain can't be accounted for from anything else."""
+    ts = _report_time(DAY_BEFORE_MIDNIGHT, 20)
+
+    with pytest.raises(RainfallUnavailable, match="No NWS routine report"):
+        fetch_antecedent_rainfall(client=_client_for(_station(overrides={ts: None})), now=NOW)
+
+
+def test_fails_closed_when_history_does_not_reach_back_far_enough():
+    """Only ~38h of records exist (what one plain limit=500 request used to return): 24h
+    would resolve, but the day-before-yesterday half of 48h can't, so the whole call must
+    raise - there is no partial result."""
+    records = _station(start=NOW - timedelta(hours=38))
 
     with pytest.raises(RainfallUnavailable):
-        fetch_antecedent_rainfall(client=_client_for(recent, older=older), now=NOW)
+        fetch_antecedent_rainfall(client=_client_for(records), now=NOW)
 
 
-def test_fails_closed_even_when_24h_alone_would_have_resolved():
-    """A real NWS request (limit=500, ~5min spacing) covers ~38-40h - plenty for 24h rain
-    (which only needs data back to 21h ago) but nowhere near the ~62h back that the
-    day-before-yesterday half of precip_prev_48h_mm needs. Before this task, that would
-    have been fine: 48h wasn't computed at all, so 24h resolving on its own was enough.
-    Now precip_prev_48h_mm is mandatory (Task 5's rainfall rule needs it to decide the
-    tier), and the three fields are computed together in one dict - there's no "24h
-    succeeds independently of 48h" anymore. So even though the RECENT request alone could
-    satisfy precip_mm/precip_prev_24h_mm here, an empty OLDER request must still fail the
-    whole fetch, per the fail-closed rule: never a guessed or partial rainfall figure."""
-    recent = _full_observations(hours=38, precip_mm=0.5)
+def test_requests_are_bounded_chunks_that_reach_the_start_of_the_48h_window():
+    """Each request is start/end-bounded and at most 24h wide (so it stays well under the
+    500-record cap and can't be truncated at its far end), and together they reach back
+    before the first 48h report."""
+    requests: list[httpx.Request] = []
 
-    with pytest.raises(RainfallUnavailable):
-        fetch_antecedent_rainfall(client=_client_for(recent, older=[]), now=NOW)
+    fetch_antecedent_rainfall(client=_client_for(_station(), requests=requests), now=NOW)
 
-
-def test_null_precip_treated_as_zero_when_weather_confirms_no_rain():
-    observations = [
-        _observation(NOW - timedelta(minutes=5 * i), precip_mm=None, description="Clear")
-        for i in range(0, 76 * 12)
-    ]
-
-    result = fetch_antecedent_rainfall(client=_client_for(observations), now=NOW)
-
-    assert result["precip_prev_24h_mm"] == 0.0
-    assert result["precip_prev_48h_mm"] == 0.0
-
-
-def test_fails_closed_when_null_precip_cannot_be_confirmed_dry():
-    # presentWeather is non-empty (some phenomenon reported) but no precip value given -
-    # per the disclosed rule, this must NOT be assumed to be 0.
-    observations = [
-        _observation(NOW, precip_mm=None, present_weather=["some_phenomenon"]),
-    ]
-
-    with pytest.raises(RainfallUnavailable):
-        fetch_antecedent_rainfall(client=_client_for(observations), now=NOW)
-
-
-def test_fails_closed_when_no_observation_near_a_required_mark():
-    # Only one observation, nowhere near most of the 24h marks.
-    observations = [_observation(NOW, precip_mm=0.0)]
-
-    with pytest.raises(RainfallUnavailable):
-        fetch_antecedent_rainfall(client=_client_for(observations), now=NOW)
+    spans = []
+    for request in requests:
+        params = request.url.params
+        start = datetime.fromisoformat(params["start"].replace("Z", "+00:00"))
+        end = datetime.fromisoformat(params["end"].replace("Z", "+00:00"))
+        assert end - start <= timedelta(hours=24)
+        spans.append((start, end))
+    assert min(start for start, _ in spans) <= DAY_BEFORE_MIDNIGHT
+    assert max(end for _, end in spans) >= NOW - timedelta(minutes=1)
 
 
 def test_fails_closed_on_empty_response():

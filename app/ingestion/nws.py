@@ -2,26 +2,57 @@
 
 See docs/landing-page/BUILD-SPEC.md's Data lineage section for why this replaces NCEI
 for live scoring: NCEI daily-summaries (the training-set source) lags ~3 days, confirmed
-live Sep 25, 2026. NWS observations update every ~5 minutes, but two things make this
-less simple than "sum the values":
+live Sep 25, 2026.
 
-1. NWS caps each request at 500 records (`limit`'s hard max) - about 38-40 hours of
-   5-minute observations in practice. 24h rain needs data back to 21h ago, safely inside
-   that window. 48h needs data back to 45h ago, which is NOT reliably available from one
-   request - that's why the model only uses precip_mm/24h (see app/model/train.py), not
-   48h/72h/7d.
-2. Each observation's `precipitationLast3Hours` already covers a ROLLING 3-hour window.
-   Summing every 5-minute record over a lookback period would count the same rain dozens
-   of times over. Instead, this module samples observations ~3 hours apart ("marks") so
-   the windows don't overlap.
-3. NWS reports `precipitationLast3Hours` as `null` when it isn't currently raining, not
-   `0`. A null is only treated as 0mm when that observation's own weather description
-   also shows no precipitation - otherwise we fail closed rather than guess.
+How rain is read (redesigned 2026-09-30 after a final-review finding, verified against a
+week of live KPHL data, 2241 observations, 2026-09-23..30):
+
+1. Only the HOURLY ROUTINE report counts. KPHL files a routine METAR at :54 past every hour
+   (168 of 168 hours present that week, no gaps). Its `precipitationLastHour` is the rain
+   since the previous routine report, so 24 consecutive :54 reports tile a day with no
+   overlap and no double counting. Everything else is ignored: the ~5-minute records
+   (never carry precip) and mid-hour SPECI reports (their `precipitationLastHour` is a
+   running subtotal of the same hour the next :54 report already includes).
+2. `precipitationLast3Hours` / `precipitationLast6Hours` are NOT used. They were populated
+   in only 8 of 2241 observations (synoptic times only). The previous design sampled
+   `precipitationLast3Hours` every 3h and treated its constant nulls as 0mm on dry-looking
+   descriptions - which silently returned 0.0 across a week that had ~53mm of real rain.
+3. A null `precipitationLastHour` does NOT mean 0mm on its own: 2 of 111 null :54 values
+   that week had rain in the raw METAR (e.g. `P0002`). Each hour is resolved in this order:
+     a. `precipitationLastHour` has a value -> use it.
+     b. Otherwise read the raw METAR (`rawMessage`) remarks:
+        - No `RMK` section at all -> unknown (every live raw METAR had one).
+        - `PNO` (rain gauge not operating) or `P////` (amount indeterminable) -> unknown.
+        - `Prrrr` present -> rrrr hundredths of an inch, converted to mm.
+        - No `P` group at all -> 0mm. METAR convention omits the group when no rain fell
+          since the last routine report; checked live: 0 of 86 such hours had any rain in a
+          SPECI within the same hour.
+     c. Raw METAR empty too (23 of 168 hours that week) -> unknown.
+   Any unknown hour inside a required window raises RainfallUnavailable - fail closed,
+   never a lower number. Honest consequence: on current live data most calls fail over to
+   Open-Meteo (see app/scoring/pull_reading.py:_fetch_rainfall), because api.weather.gov
+   drops the raw METAR for roughly 1 in 7 routine reports. That is the correct trade: a
+   missing hour could have been the rain that crosses the 2.5mm rule.
+
+Windows. Each :54 report covers the hour ending at :54, so a local calendar day is the 24
+reports from 00:54 through 23:54 local (a 6-minute offset from true midnight - rain in the
+last 6 minutes of a day is counted in the next day). Reports are expected up to
+REPORT_LATENCY before "now" (api.weather.gov publishes them with a delay), so the most
+recent hour may not be included yet.
+
+Requests. The NWS API caps `limit` at 500 records (~38-40h of 5-minute observations), and
+precip_prev_48h_mm needs reports back to ~73h before "now" in the worst case. Instead of one
+recent request plus one wide older request (the old 76h-to-36h window could exceed 500
+records and be silently truncated at its far end), the needed span is fetched in
+`start`/`end`-bounded chunks of at most REQUEST_CHUNK (24h, ~300 records). Any chunk that
+comes back short still can't cause an undercount: every required hour is checked
+individually.
 """
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+import re
+from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -32,17 +63,17 @@ USER_AGENT = "AquaSentinel (hackathon prototype; contact: project owner)"
 MAX_LIMIT = 500  # NWS API's hard cap on the `limit` query param.
 
 EASTERN = ZoneInfo("America/New_York")
-MARK_SPACING = timedelta(hours=3)  # matches precipitationLast3Hours' own window width
-OBSERVATION_TOLERANCE = timedelta(minutes=90)  # how close an obs must be to a mark
+ROUTINE_REPORT_MINUTE = 54  # KPHL's hourly routine METAR time, verified live 2026-09-30.
+REPORT_LATENCY = timedelta(minutes=45)  # how long after :54 before the report is expected
+REQUEST_CHUNK = timedelta(hours=24)  # keeps each request well under the 500-record cap
+REQUEST_MARGIN = timedelta(hours=1)  # fetch a little before the first required report
 
-OLDER_WINDOW_START = timedelta(hours=76)  # covers the worst case: local midnight up to 24h
-OLDER_WINDOW_END = timedelta(hours=36)    # before "now", plus 45h of marks back from there,
-                                           # with a margin overlapping the recent request's
-                                           # ~38-40h reach so no mark falls in a gap.
+MM_PER_HUNDREDTH_INCH = 0.254
 
-_NO_PRECIP_KEYWORDS = (
-    "rain", "shower", "drizzle", "thunderstorm", "snow", "sleet", "precipitation", "hail",
-)
+# Remarks groups. They must stand alone (whitespace-delimited): "P0002" is the hourly
+# precip group, but "SLP102" or "PK WND" must never match.
+_HOURLY_PRECIP_GROUP = re.compile(r"(?:^|\s)P(\d{4}|////)(?=\s|$)")
+_GAUGE_NOT_OPERATING = re.compile(r"(?:^|\s)PNO(?=\s|$)")
 
 
 class RainfallUnavailable(RuntimeError):
@@ -56,50 +87,65 @@ def fetch_antecedent_rainfall(
 ) -> dict[str, float]:
     """Return {precip_mm, precip_prev_24h_mm, precip_prev_48h_mm} in mm.
 
-    precip_mm is rain since local (US/Eastern) midnight, rounded down to the nearest 3h
-    mark. precip_prev_24h_mm is a rolling 24h window ending at `now`. precip_prev_48h_mm
-    (added 2026-09-27, Milestone 1b) is the sum of the two full prior LOCAL CALENDAR DAYS
-    (midnight to midnight, US/Eastern) - matching how training derived the rule's threshold
-    (build_dataset.py:load_precip()), not a rolling 48h-from-now window, which would be a
-    different quantity (see the spec's "Window mismatch" note). This needs data back to
-    ~69h before "now" in the worst case, further than a single limit=500 request reliably
-    reaches (~38-40h) - so this makes a second, start/end-bounded request for the older
-    window, verified live to work (see this task's plan notes).
+    - precip_mm: rain since local (US/Eastern) midnight, from today's routine reports.
+    - precip_prev_24h_mm: the 24 most recent routine reports (a rolling 24h).
+    - precip_prev_48h_mm: the two full prior LOCAL CALENDAR DAYS (midnight to midnight,
+      US/Eastern), matching how training derived the rule's 2.5mm threshold
+      (build_dataset.py:load_precip()), not a rolling 48h-from-now window.
+
+    All three are computed together; if ANY required hour can't be resolved from real
+    data, the whole call raises RainfallUnavailable.
     """
     now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+
+    latest_report = _latest_expected_report(now)
+    today_midnight = _local_midnight_utc(now, days_before=0)
+    two_days_ago_midnight = _local_midnight_utc(now, days_before=2)
+    earliest_needed = min(two_days_ago_midnight, latest_report - timedelta(hours=24))
+
     owns_client = client is None
     client = client or httpx.Client(timeout=30.0, headers={"User-Agent": USER_AGENT})
     try:
-        recent_payload = _get_observations(client, {"limit": MAX_LIMIT})
-        older_payload = _get_observations(client, {
-            "start": (now - OLDER_WINDOW_START).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "end": (now - OLDER_WINDOW_END).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "limit": MAX_LIMIT,
-        })
+        observations = _fetch_observations(client, earliest_needed - REQUEST_MARGIN, now)
     finally:
         if owns_client:
             client.close()
 
-    observations = _parse_observations(recent_payload) + _parse_observations(older_payload)
     if not observations:
         raise RainfallUnavailable("NWS returned no usable observations")
 
-    midnight = _local_midnight_utc(now)
-    hours_since_midnight = max(0, int((now - midnight).total_seconds() // 3600))
-    hours_today = (hours_since_midnight // 3) * 3
-
-    day_1_end = midnight
-    day_2_end = midnight - timedelta(hours=24)
-
     return {
-        "precip_mm": _sum_over_marks(observations, now, hours_back=hours_today),
-        "precip_prev_24h_mm": _sum_over_marks(observations, now, hours_back=24),
-        "precip_prev_48h_mm": round(
-            _sum_over_marks(observations, day_1_end, hours_back=24)
-            + _sum_over_marks(observations, day_2_end, hours_back=24),
-            1,
+        "precip_mm": _sum_routine_reports(observations, today_midnight, latest_report),
+        "precip_prev_24h_mm": _sum_routine_reports(
+            observations, latest_report - timedelta(hours=24), latest_report
+        ),
+        "precip_prev_48h_mm": _sum_routine_reports(
+            observations, two_days_ago_midnight, today_midnight
         ),
     }
+
+
+def _fetch_observations(
+    client: httpx.Client, start: datetime, end: datetime
+) -> dict[datetime, dict]:
+    """Fetch [start, end] in bounded chunks and return {timestamp_utc: properties}.
+
+    Chunks share only their boundary instant; keying by timestamp collapses any record
+    returned twice.
+    """
+    observations: dict[datetime, dict] = {}
+    chunk_end = end
+    while chunk_end > start:
+        chunk_start = max(start, chunk_end - REQUEST_CHUNK)
+        payload = _get_observations(client, {
+            "start": chunk_start.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "end": chunk_end.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "limit": MAX_LIMIT,
+        })
+        for props in _parse_observations(payload):
+            observations[props["_timestamp_utc"]] = props
+        chunk_end = chunk_start
+    return observations
 
 
 def _get_observations(client: httpx.Client, params: dict) -> dict:
@@ -111,63 +157,105 @@ def _get_observations(client: httpx.Client, params: dict) -> dict:
         raise RainfallUnavailable(f"NWS observations request failed: {exc}") from exc
 
 
-def _local_midnight_utc(now_utc: datetime) -> datetime:
-    local_now = now_utc.astimezone(EASTERN)
-    local_midnight = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
-    return local_midnight.astimezone(timezone.utc)
-
-
-def _parse_observations(payload: dict) -> list[tuple[datetime, float | None, bool]]:
-    """Return [(timestamp_utc, precip_mm_or_None, no_precip_confirmed), ...]."""
+def _parse_observations(payload: dict) -> list[dict]:
     parsed = []
     for feature in payload.get("features", []):
         props = feature.get("properties", {})
         timestamp = props.get("timestamp")
         if not timestamp:
             continue
-        ts = datetime.fromisoformat(timestamp).astimezone(timezone.utc)
-        precip = props.get("precipitationLast3Hours") or {}
-        raw_value = precip.get("value")
-        parsed.append((ts, raw_value, _describes_no_precipitation(props)))
+        props = dict(props)
+        props["_timestamp_utc"] = datetime.fromisoformat(timestamp).astimezone(timezone.utc)
+        parsed.append(props)
     return parsed
 
 
-def _describes_no_precipitation(props: dict) -> bool:
-    if props.get("presentWeather"):
-        return False  # NWS explicitly listed weather phenomena - don't assume none.
-    description = (props.get("textDescription") or "").lower()
-    return not any(word in description for word in _NO_PRECIP_KEYWORDS)
+def _local_midnight_utc(now_utc: datetime, days_before: int) -> datetime:
+    """Local (US/Eastern) midnight `days_before` calendar days before today, in UTC.
 
-
-def _sum_over_marks(
-    observations: list[tuple[datetime, float | None, bool]], now: datetime, hours_back: int
-) -> float:
-    """Sum non-overlapping 3h-spaced marks back from `now`, covering `hours_back` hours.
-
-    Each mark takes the single closest observation's own 3h precip total - NOT a sum of
-    every observation in the window, which would count the same rain many times over.
+    Built from the calendar date rather than by subtracting 24h steps, so a day that
+    contains a DST change still starts at its own real local midnight.
     """
-    if hours_back <= 0:
-        return 0.0
-    n_marks = hours_back // 3
-    marks = [now - MARK_SPACING * i for i in range(n_marks)]
-    return round(sum(_rain_at_mark(observations, mark) for mark in marks), 1)
+    local_date: date = now_utc.astimezone(EASTERN).date() - timedelta(days=days_before)
+    return datetime.combine(local_date, time(0), tzinfo=EASTERN).astimezone(timezone.utc)
 
 
-def _rain_at_mark(
-    observations: list[tuple[datetime, float | None, bool]], mark: datetime
+def _latest_expected_report(now: datetime) -> datetime:
+    """The most recent routine-report time that should already be published."""
+    cutoff = now - REPORT_LATENCY
+    candidate = cutoff.replace(minute=ROUTINE_REPORT_MINUTE, second=0, microsecond=0)
+    if candidate > cutoff:
+        candidate -= timedelta(hours=1)
+    return candidate
+
+
+def _routine_report_times(start: datetime, end: datetime) -> list[datetime]:
+    """Every :54 routine-report time in (start, end]."""
+    first = start.replace(minute=ROUTINE_REPORT_MINUTE, second=0, microsecond=0)
+    if first <= start:
+        first += timedelta(hours=1)
+    times = []
+    current = first
+    while current <= end:
+        times.append(current)
+        current += timedelta(hours=1)
+    return times
+
+
+def _sum_routine_reports(
+    observations: dict[datetime, dict], start: datetime, end: datetime
 ) -> float:
-    nearby = [obs for obs in observations if abs(obs[0] - mark) <= OBSERVATION_TOLERANCE]
-    if not nearby:
+    """Sum the hourly rain from every routine report in (start, end]. Raises
+    RainfallUnavailable if any one of them is missing or can't be resolved."""
+    total = 0.0
+    for report_time in _routine_report_times(start, end):
+        report = observations.get(report_time)
+        if report is None:
+            raise RainfallUnavailable(
+                f"No NWS routine report at {report_time.isoformat()} - can't account for "
+                "that hour's rain."
+            )
+        total += _hourly_rain_mm(report, report_time)
+    return round(total, 1)
+
+
+def _hourly_rain_mm(report: dict, report_time: datetime) -> float:
+    """Rain in the hour ending at this routine report, in mm - or raise if unknown.
+
+    See the module docstring (point 3) for why each branch exists and how it was verified.
+    """
+    last_hour = report.get("precipitationLastHour") or {}
+    value = last_hour.get("value")
+    if value is not None:
+        unit = last_hour.get("unitCode")
+        if unit != "wmoUnit:mm":
+            raise RainfallUnavailable(
+                f"Unexpected precipitation unit {unit!r} at {report_time.isoformat()}"
+            )
+        return float(value)
+
+    raw = report.get("rawMessage") or ""
+    if not raw.strip():
         raise RainfallUnavailable(
-            f"No NWS observation within {OBSERVATION_TOLERANCE} of {mark.isoformat()}"
+            f"Routine report at {report_time.isoformat()} has no hourly precip value and "
+            "no raw METAR to confirm it was dry."
         )
-    _, raw_value, no_precip_confirmed = min(nearby, key=lambda obs: abs(obs[0] - mark))
-    if raw_value is not None:
-        return float(raw_value)
-    if no_precip_confirmed:
-        return 0.0
-    raise RainfallUnavailable(
-        f"Observation near {mark.isoformat()} has no precip value and its weather "
-        "description doesn't confirm no precipitation."
-    )
+    if " RMK " not in raw:
+        # The P group lives in remarks; a report with no remarks section at all (every
+        # live KPHL raw METAR had one) can't confirm "no P group" means no rain.
+        raise RainfallUnavailable(
+            f"Raw METAR at {report_time.isoformat()} has no remarks section to read rain from."
+        )
+    remarks = raw.split(" RMK ", 1)[1]
+    if _GAUGE_NOT_OPERATING.search(remarks):
+        raise RainfallUnavailable(
+            f"Rain gauge reported not operating (PNO) at {report_time.isoformat()}"
+        )
+    group = _HOURLY_PRECIP_GROUP.search(remarks)
+    if group is None:
+        return 0.0  # METAR omits the P group when no rain fell since the last report.
+    if group.group(1) == "////":
+        raise RainfallUnavailable(
+            f"Hourly rain amount indeterminable (P////) at {report_time.isoformat()}"
+        )
+    return int(group.group(1)) * MM_PER_HUNDREDTH_INCH
