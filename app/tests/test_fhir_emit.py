@@ -24,7 +24,10 @@ def _reading(risk_tier: str = "Unsafe", location: str = "penns_landing") -> dict
             "proxies": {
                 "water_temp_c": 21.5, "sp_conductance_uscm": 266.0,
                 "dissolved_oxygen_mgl": 6.6, "ph": 7.3, "turbidity_fnu": 6.3,
-            }
+            },
+            "rainfall_mm": {"precip_mm": 0.0, "precip_prev_24h_mm": 1.0, "precip_prev_48h_mm": 4.2},
+            "rainfall_source": "nws",
+            "rule_threshold_mm": 2.5,
         },
     }
 

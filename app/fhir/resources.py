@@ -76,7 +76,49 @@ def build_proxy_observations(reading: dict) -> list[dict]:
     return entries
 
 
-def build_risk_observation(reading: dict, proxy_entries: list[dict]) -> dict:
+RAINFALL_48H_DISPLAY_NAME = (
+    "Precipitation, two prior local calendar days (48h, midnight to midnight US/Eastern)"
+)
+RAINFALL_SOURCE_DISPLAY = {
+    "nws": "NWS station KPHL (hourly routine METAR reports)",
+    "open-meteo": "Open-Meteo weather model (fallback when the NWS record is incomplete)",
+}
+
+
+def build_rainfall_observation(reading: dict) -> dict:
+    """The 48h rainfall value the rainfall rule actually decided risk_tier on (Milestone
+    1b). Without it, RPHSA would receive a tier plus proxy values that don't decide the
+    tier, and could not audit the decision from the data it was sent.
+
+    Required, not optional: a KeyError here means the reading can't show what decided its
+    tier, and app/fhir/emit.py logs that failure rather than sending an unauditable Bundle.
+    """
+    evidence = reading["evidence"]
+    value = evidence["rainfall_mm"]["precip_prev_48h_mm"]
+    resource = {
+        "resourceType": "Observation",
+        "id": str(uuid.uuid4()),
+        "status": "preliminary",
+        "code": {"text": RAINFALL_48H_DISPLAY_NAME},
+        "subject": {"reference": f"Location/{LOCATION_ID}"},
+        "effectiveDateTime": reading["time"],
+        "valueQuantity": {"value": value, "unit": "mm"},
+    }
+    notes = []
+    source = evidence.get("rainfall_source")
+    if source:
+        notes.append(f"Source: {RAINFALL_SOURCE_DISPLAY.get(source, source)}.")
+    threshold = evidence.get("rule_threshold_mm")
+    if threshold is not None:
+        notes.append(f"Risk tier rule: Unsafe when this value is >= {threshold} mm.")
+    if notes:
+        resource["note"] = [{"text": " ".join(notes)}]
+    return {"fullUrl": f"urn:uuid:{uuid.uuid4()}", "resource": resource}
+
+
+def build_risk_observation(
+    reading: dict, proxy_entries: list[dict], rainfall_entry: dict
+) -> dict:
     tier_code = _tier_code(reading["risk_tier"])
     return {
         "fullUrl": f"urn:uuid:{uuid.uuid4()}",
@@ -94,7 +136,10 @@ def build_risk_observation(reading: dict, proxy_entries: list[dict]) -> dict:
                 ],
                 "text": reading["risk_tier"],
             },
-            "derivedFrom": [{"reference": entry["fullUrl"]} for entry in proxy_entries],
+            # The rainfall value first: it is what decided the tier. The proxies follow as
+            # context (and, minus turbidity, as the confidence model's inputs).
+            "derivedFrom": [{"reference": rainfall_entry["fullUrl"]}]
+            + [{"reference": entry["fullUrl"]} for entry in proxy_entries],
         },
     }
 
@@ -119,10 +164,11 @@ def build_flag(flag_id: str, tier: str, status: str, period_start: str, period_e
 def build_bundle(reading: dict, flag: dict) -> dict:
     location_entry = {"fullUrl": f"urn:uuid:{uuid.uuid4()}", "resource": build_location()}
     proxy_entries = build_proxy_observations(reading)
-    risk_entry = build_risk_observation(reading, proxy_entries)
+    rainfall_entry = build_rainfall_observation(reading)
+    risk_entry = build_risk_observation(reading, proxy_entries, rainfall_entry)
     flag_entry = {"fullUrl": f"urn:uuid:{uuid.uuid4()}", "resource": flag}
     return {
         "resourceType": "Bundle",
         "type": "collection",
-        "entry": [location_entry] + proxy_entries + [risk_entry, flag_entry],
+        "entry": [location_entry, rainfall_entry] + proxy_entries + [risk_entry, flag_entry],
     }

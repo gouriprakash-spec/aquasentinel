@@ -28,7 +28,10 @@ def _reading(risk_tier: str, time: str = "2026-06-01T12:00:00+00:00") -> dict:
             "proxies": {
                 "water_temp_c": 21.5, "sp_conductance_uscm": 266.0,
                 "dissolved_oxygen_mgl": 6.6, "ph": 7.3, "turbidity_fnu": 6.3,
-            }
+            },
+            "rainfall_mm": {"precip_mm": 0.0, "precip_prev_24h_mm": 1.0, "precip_prev_48h_mm": 4.2},
+            "rainfall_source": "nws",
+            "rule_threshold_mm": 2.5,
         },
     }
 
@@ -58,6 +61,16 @@ def test_unsafe_onset_bundle_is_received_and_stored_by_rphsa_stub(monkeypatch, t
     assert bundle["resourceType"] == "Bundle"
     flag_entries = [e for e in bundle["entry"] if e["resource"]["resourceType"] == "Flag"]
     assert flag_entries[0]["resource"]["status"] == "active"
+
+    # Milestone 1b final-review finding: what RPHSA receives must let it audit the tier -
+    # the 48h rain value the rule decided on arrives in the Bundle and is referenced by the
+    # risk Observation's derivedFrom.
+    by_url = {e["fullUrl"]: e["resource"] for e in bundle["entry"]}
+    risk = next(r for r in by_url.values() if r["resourceType"] == "Observation" and "method" in r)
+    derived = [by_url[d["reference"]] for d in risk["derivedFrom"]]
+    rainfall = [r for r in derived if r["code"]["text"].startswith("Precipitation")]
+    assert len(rainfall) == 1
+    assert rainfall[0]["valueQuantity"] == {"value": 4.2, "unit": "mm"}
 
 
 def test_all_clear_after_onset_is_received_as_inactive_flag(monkeypatch, tmp_path):
