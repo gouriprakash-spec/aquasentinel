@@ -28,6 +28,14 @@ def build_status_contract(row: dict) -> dict:
         "threshold_cfu_100ml": row["threshold_cfu_100ml"],
         "model_version": row["model_version"],
         "regime": row["regime"],
+        # Milestone 1b: what decided risk_tier, so an agent or person reading status can
+        # audit the decision, not just see its outcome. The rainfall rule decides
+        # (precip_prev_48h_mm >= rule_threshold_mm -> Unsafe); model_probability_unsafe
+        # only informs confidence, which measures rule/model agreement.
+        "decision_basis": row["decision_basis"],
+        "rule_threshold_mm": row["rule_threshold_mm"],
+        "rainfall_source": row["rainfall_source"],
+        "model_probability_unsafe": row["model_probability_unsafe"],
         "proxies": {
             "water_temp_c": row["water_temp_c"],
             "sp_conductance_uscm": row["sp_conductance_uscm"],
@@ -36,6 +44,7 @@ def build_status_contract(row: dict) -> dict:
             "turbidity_fnu": row["turbidity_fnu"],
             "precip_mm": row["precip_mm"],
             "precip_prev_24h_mm": row["precip_prev_24h_mm"],
+            "precip_prev_48h_mm": row["precip_prev_48h_mm"],
         },
         "kind": "model_estimate",
     }

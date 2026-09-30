@@ -23,7 +23,7 @@
   "@type": "Dataset",
   "name": "AquaSentinel Water-Safety Estimates — Center City Tidal Delaware",
   "description": "Live E. coli risk estimates (Safe/Unsafe) for the Center City tidal Delaware, derived from live USGS gauge proxies and near-real-time rainfall. An estimate, not a measured bacteria value.",
-  "variableMeasured": ["risk_tier", "confidence", "water_temp_c", "sp_conductance_uscm", "dissolved_oxygen_mgl", "ph", "turbidity_fnu", "precip_mm", "precip_prev_24h_mm"],
+  "variableMeasured": ["risk_tier", "confidence", "water_temp_c", "sp_conductance_uscm", "dissolved_oxygen_mgl", "ph", "turbidity_fnu", "precip_mm", "precip_prev_24h_mm", "precip_prev_48h_mm"],
   "spatialCoverage": {
     "@type": "Place",
     "name": "Penn's Landing, Center City tidal Delaware",
@@ -146,12 +146,21 @@
     <div>
       <div class="disp" style="font-size:20px;font-weight:600;">Live readings</div>
       <div class="sub">Each pull reads live data from the <strong>USGS Penn's Landing gauge (01467200)</strong>
-        and the <strong>PHL weather station</strong>, then scores how safe the Center City tidal
-        Delaware reach is for recreation right now. Ben Franklin Bridge and Navy Yard are the DRBC
-        lab stations whose past E. coli tests trained the model.</div>
+        and the <strong>PHL weather station</strong> (or the Open-Meteo weather model when the
+        station's rain record is incomplete), then estimates how safe the Center City tidal
+        Delaware reach is for recreation right now.</div>
+      <div class="sub" id="methodology"><strong>How the status is decided:</strong> a disclosed
+        rainfall rule, not a model. The reach is flagged <strong>Unsafe</strong> when rain over the
+        <strong>two previous calendar days</strong> (a 48-hour window, midnight to midnight, the
+        same window the rule was derived on) is at least
+        <strong><span id="ruleThreshold">the rule threshold</span> mm</strong>. A model trained on
+        past DRBC E. coli samples taken near shore at Penn's Landing runs alongside it;
+        &ldquo;rule/model agreement&rdquo; shows how strongly that model agrees with the rule, and
+        is not the model's own verdict. Ben Franklin Bridge and Navy Yard are DRBC channel
+        stations, shown for context.</div>
     </div>
     <div style="display:flex;align-items:center;gap:14px;flex:none;">
-      <span class="pill" id="pullPill">LIVE MODEL ESTIMATE</span>
+      <span class="pill" id="pullPill">LIVE READING</span>
       <button class="btn" id="pullBtn" onclick="pullReading()">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M20 12A8 8 0 1 1 12 4" stroke="#fff" stroke-width="1.9" stroke-linecap="round"/><path d="M12 4L16 4L16 8" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 8V12L15 14" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
         Pull latest reading
@@ -170,12 +179,13 @@
           <th>TIME</th>
           <th>RAIN TODAY <span class="u">mm</span></th>
           <th>RAIN 24H <span class="u">mm</span></th>
+          <th>RAIN PRIOR 2 DAYS <span class="u">mm &middot; decides status</span></th>
           <th>TURBIDITY <span class="u">FNU</span></th>
           <th>TEMP <span class="u">&deg;C</span></th>
           <th>SP. COND <span class="u">&micro;S/cm</span></th>
           <th>DISS. O&#8322; <span class="u">mg/L</span></th>
           <th>pH</th>
-          <th>MODEL CONFIDENCE</th>
+          <th>RULE/MODEL AGREEMENT</th>
           <th>STATUS</th>
         </tr>
       </thead>
@@ -272,6 +282,13 @@
 
   function round1(x){ return Math.round(x*10)/10; }
 
+  // For values that can legitimately be missing (e.g. rows stored before Milestone 1b
+  // recorded the 48h rain). round1(null) would print 0 - a made-up all-clear - so show a
+  // dash instead.
+  function fmt1(x){ return (x === null || x === undefined) ? '&mdash;' : round1(x); }
+
+  var RAIN_SOURCE_LABELS = { 'nws': 'NWS station KPHL', 'open-meteo': 'Open-Meteo weather model' };
+
   function formatTime(isoString){
     var d = new Date(isoString);
     return ("0"+d.getHours()).slice(-2) + ":" + ("0"+d.getMinutes()).slice(-2);
@@ -285,11 +302,18 @@
     var proxies = isStored ? reading : reading.evidence.proxies;
     var rainToday = isStored ? reading.precip_mm : reading.evidence.rainfall_mm.precip_mm;
     var rain24 = isStored ? reading.precip_prev_24h_mm : reading.evidence.rainfall_mm.precip_prev_24h_mm;
+    // The value the rainfall rule actually decided the tier on, and what it was compared to.
+    var rain48 = isStored ? reading.precip_prev_48h_mm : reading.evidence.rainfall_mm.precip_prev_48h_mm;
+    var ruleThreshold = isStored ? reading.rule_threshold_mm : reading.evidence.rule_threshold_mm;
+    var rainSource = isStored ? reading.rainfall_source : reading.evidence.rainfall_source;
     var time = isStored ? reading.reading_time : reading.time;
     return {
       time: formatTime(time),
       rainToday: round1(rainToday),
       rain24: round1(rain24),
+      rain48: fmt1(rain48),
+      ruleThreshold: fmt1(ruleThreshold),
+      rainSource: RAIN_SOURCE_LABELS[rainSource] || null,
       turb: round1(proxies.turbidity_fnu),
       temp: round1(proxies.water_temp_c),
       cond: round1(proxies.sp_conductance_uscm),
@@ -326,7 +350,7 @@
       })
       .then(function(reading){
         rows = [toDisplayRow(reading)].concat(rows).slice(0, 9);
-        pill.textContent = 'LIVE MODEL ESTIMATE';
+        pill.textContent = 'LIVE READING';
         render();
       })
       .catch(function(err){
@@ -365,8 +389,12 @@
     b.innerHTML =
       '<span class="dot" style="background:'+s.color+'"></span>' +
       '<div>Latest reading &mdash; <span class="disp" style="font-weight:700;color:'+s.color+'">'+latest.status+'</span>' +
-      ' &middot; model confidence <strong>'+latest.confidencePct+'%</strong> &middot; Center City reach &middot; '+latest.time+
-      ' <span style="color:var(--faint);">&middot; Source: AquaSentinel estimate</span></div>';
+      ' &middot; rain over the prior 2 days <strong>'+latest.rain48+' mm</strong>' +
+      ' (Unsafe at &ge; '+latest.ruleThreshold+' mm)' +
+      ' &middot; rule/model agreement <strong>'+latest.confidencePct+'%</strong> &middot; Center City reach &middot; '+latest.time+
+      ' <span style="color:var(--faint);">&middot; Source: AquaSentinel estimate' +
+      (latest.rainSource ? '; rain from '+latest.rainSource : '') + '</span></div>';
+    document.getElementById('ruleThreshold').innerHTML = latest.ruleThreshold;
 
     // table
     var html = '';
@@ -379,6 +407,7 @@
         '<td class="mono">'+r.time+'</td>' +
         '<td class="mono">'+r.rainToday+'</td>' +
         '<td class="mono">'+r.rain24+'</td>' +
+        '<td class="mono est">'+r.rain48+'</td>' +
         '<td class="mono">'+r.turb+'</td>' +
         '<td class="mono">'+r.temp+'</td>' +
         '<td class="mono">'+r.cond+'</td>' +

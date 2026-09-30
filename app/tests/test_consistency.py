@@ -32,7 +32,13 @@ def _fake_reading(risk_tier: str = "Unsafe") -> dict:
                 "dissolved_oxygen_mgl": 4.5, "ph": 7.0, "turbidity_fnu": 40.0,
             },
             "proxy_timestamps": {},
-            "rainfall_mm": {"precip_mm": 5.0, "precip_prev_24h_mm": 30.0},
+            "rainfall_mm": {
+                "precip_mm": 5.0, "precip_prev_24h_mm": 30.0, "precip_prev_48h_mm": 12.7,
+            },
+            "rainfall_source": "nws",
+            "decision_basis": "rainfall_rule",
+            "rule_threshold_mm": 2.5,
+            "model_probability_unsafe": 0.91,
         },
         "threshold_cfu_100ml": 235,
         "model_version": "rf_B_post2021",
@@ -72,3 +78,10 @@ def test_mcp_status_and_readings_agree_on_tier_and_timestamp(monkeypatch, tmp_pa
     mcp_result = asyncio.run(mcp_server.get_current_status("penns_landing"))
     assert mcp_result["risk_tier"] == "Unsafe"
     assert mcp_result["time"] == banner_time
+
+    # Milestone 1b: all three surfaces also agree on WHAT decided the tier - the 48h rain
+    # value the banner shows next to it, and the rule it was compared against.
+    for surface in (status_body, mcp_result):
+        assert surface["proxies"]["precip_prev_48h_mm"] == readings[0]["precip_prev_48h_mm"] == 12.7
+        assert surface["decision_basis"] == readings[0]["decision_basis"] == "rainfall_rule"
+        assert surface["rule_threshold_mm"] == readings[0]["rule_threshold_mm"] == 2.5

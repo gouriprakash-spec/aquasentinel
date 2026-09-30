@@ -23,9 +23,14 @@ def _row() -> dict:
         "turbidity_fnu": 5.0,
         "precip_mm": 0.0,
         "precip_prev_24h_mm": 2.0,
+        "precip_prev_48h_mm": 3.1,
+        "rainfall_source": "nws",
+        "decision_basis": "rainfall_rule",
+        "rule_threshold_mm": 2.5,
+        "model_probability_unsafe": 0.18,
         "threshold_cfu_100ml": 235,
-        "model_version": "rf_B_post2021",
-        "regime": "B_post2021",
+        "model_version": "rf_nearshore",
+        "regime": "nearshore",
         "retrieved_at": "2026-09-27T16:00:00+00:00",
     }
 
@@ -41,9 +46,23 @@ def test_build_status_contract_maps_top_level_fields():
     assert contract["source_url"] == "https://waterservices.usgs.gov/nwis/iv/?sites=01467200"
     assert contract["retrieved_at"] == "2026-09-27T16:00:00+00:00"
     assert contract["threshold_cfu_100ml"] == 235
-    assert contract["model_version"] == "rf_B_post2021"
-    assert contract["regime"] == "B_post2021"
+    assert contract["model_version"] == "rf_nearshore"
+    assert contract["regime"] == "nearshore"
     assert contract["kind"] == "model_estimate"
+
+
+def test_build_status_contract_surfaces_what_decided_the_tier():
+    """Milestone 1b final-review finding: the rule decides the tier, but status used to
+    publish only the tier - nobody querying it could see the 48h rain value, the threshold
+    it was compared against, which source supplied the rain, or the model's (confidence-
+    only) probability."""
+    contract = build_status_contract(_row())
+
+    assert contract["decision_basis"] == "rainfall_rule"
+    assert contract["rule_threshold_mm"] == 2.5
+    assert contract["rainfall_source"] == "nws"
+    assert contract["model_probability_unsafe"] == 0.18
+    assert contract["proxies"]["precip_prev_48h_mm"] == 3.1
 
 
 def test_build_status_contract_proxies_shape():
@@ -57,6 +76,7 @@ def test_build_status_contract_proxies_shape():
         "turbidity_fnu": 5.0,
         "precip_mm": 0.0,
         "precip_prev_24h_mm": 2.0,
+        "precip_prev_48h_mm": 3.1,
     }
 
 

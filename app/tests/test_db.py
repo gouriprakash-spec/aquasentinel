@@ -23,9 +23,32 @@ def _fake_reading(risk_tier: str = "Safe") -> dict:
                 "ph": 7.3,
                 "turbidity_fnu": 6.3,
             },
-            "rainfall_mm": {"precip_mm": 0.0, "precip_prev_24h_mm": 0.0},
+            "rainfall_mm": {
+                "precip_mm": 0.0, "precip_prev_24h_mm": 0.0, "precip_prev_48h_mm": 3.1,
+            },
+            "rainfall_source": "open-meteo",
+            "decision_basis": "rainfall_rule",
+            "rule_threshold_mm": 2.5,
+            "model_probability_unsafe": 0.42,
         },
     }
+
+
+def test_persists_what_decided_the_tier(tmp_path):
+    """Milestone 1b final-review finding: pull_reading()'s evidence carries the 48h rain
+    value the rule decided on, the threshold, the rain source, and the model's
+    confidence-only probability - all five used to be silently dropped on insert."""
+    db_path = tmp_path / "test.db"
+    db.init_db(db_path=db_path)
+
+    db.insert_reading(_fake_reading(), db_path=db_path)
+
+    row = db.get_recent_readings(db_path=db_path)[0]
+    assert row["precip_prev_48h_mm"] == 3.1
+    assert row["rainfall_source"] == "open-meteo"
+    assert row["decision_basis"] == "rainfall_rule"
+    assert row["rule_threshold_mm"] == 2.5
+    assert row["model_probability_unsafe"] == 0.42
 
 
 def test_insert_and_read_back(tmp_path):

@@ -77,7 +77,13 @@ async def get_current_status(location_id: str) -> dict:
         On success: {"location": str, "time": str, "risk_tier": "Safe"|"Unsafe",
         "confidence": float, "source": str, "source_url": str, "retrieved_at": str,
         "threshold_cfu_100ml": int, "model_version": str, "regime": str,
-        "proxies": {...}, "kind": "model_estimate"}
+        "decision_basis": "rainfall_rule", "rule_threshold_mm": float,
+        "rainfall_source": "nws"|"open-meteo", "model_probability_unsafe": float,
+        "proxies": {..., "precip_prev_48h_mm": float}, "kind": "model_estimate"}
+        risk_tier is decided by the rainfall rule: Unsafe when proxies.precip_prev_48h_mm
+        (rain over the two prior local calendar days) >= rule_threshold_mm. A model's
+        model_probability_unsafe only informs confidence, which is how strongly the model
+        agrees with the rule - not the model's own certainty.
         On an unknown location or no reading yet: {"status": "unavailable", "reason": str}
     """
     if location_id != LOCATION_ID:

@@ -27,6 +27,14 @@ CREATE TABLE IF NOT EXISTS readings (
     turbidity_fnu REAL,
     precip_mm REAL,
     precip_prev_24h_mm REAL,
+    -- Milestone 1b: what actually decided risk_tier. precip_prev_48h_mm is the value the
+    -- rainfall rule compared against rule_threshold_mm; model_probability_unsafe only fed
+    -- confidence. Stored so the tier can be audited later, not just displayed.
+    precip_prev_48h_mm REAL,
+    rainfall_source TEXT,
+    decision_basis TEXT,
+    rule_threshold_mm REAL,
+    model_probability_unsafe REAL,
     threshold_cfu_100ml INTEGER NOT NULL,
     model_version TEXT NOT NULL,
     regime TEXT NOT NULL,
@@ -59,8 +67,9 @@ def init_db(db_path: Path | None = None) -> None:
 
 def insert_reading(reading: dict, db_path: Path | None = None) -> int:
     """Store a reading dict shaped like app.scoring.pull_reading.pull_reading()'s output."""
-    proxies = reading["evidence"]["proxies"]
-    rainfall = reading["evidence"]["rainfall_mm"]
+    evidence = reading["evidence"]
+    proxies = evidence["proxies"]
+    rainfall = evidence["rainfall_mm"]
     with _connect(db_path) as conn:
         cursor = conn.execute(
             """
@@ -68,8 +77,10 @@ def insert_reading(reading: dict, db_path: Path | None = None) -> int:
                 location, reading_time, risk_tier, confidence,
                 water_temp_c, sp_conductance_uscm, dissolved_oxygen_mgl, ph, turbidity_fnu,
                 precip_mm, precip_prev_24h_mm,
+                precip_prev_48h_mm, rainfall_source, decision_basis, rule_threshold_mm,
+                model_probability_unsafe,
                 threshold_cfu_100ml, model_version, regime, retrieved_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 reading["location"],
@@ -83,6 +94,11 @@ def insert_reading(reading: dict, db_path: Path | None = None) -> int:
                 proxies.get("turbidity_fnu"),
                 rainfall.get("precip_mm"),
                 rainfall.get("precip_prev_24h_mm"),
+                rainfall.get("precip_prev_48h_mm"),
+                evidence.get("rainfall_source"),
+                evidence.get("decision_basis"),
+                evidence.get("rule_threshold_mm"),
+                evidence.get("model_probability_unsafe"),
                 reading["threshold_cfu_100ml"],
                 reading["model_version"],
                 reading["regime"],
