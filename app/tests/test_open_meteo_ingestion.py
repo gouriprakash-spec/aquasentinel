@@ -54,6 +54,26 @@ def test_sums_only_since_local_midnight_for_precip_mm():
     assert result["precip_mm"] == 18.0
 
 
+def test_future_forecast_hours_are_excluded_from_every_window():
+    """Open-Meteo's /v1/forecast returns forecast hours after `now` in the same hourly
+    series (hundreds of them in a real call). A 24h check bounded only by `now - ts <= 24h`
+    passes every future hour (its `now - ts` is negative), so forecast rain leaked into an
+    observed-rain figure. Here all past hours are dry and every future hour is wet: all
+    three windows must stay 0.0."""
+    past = _hourly_payload(hours_back=76, precip_mm=0.0)["hourly"]
+    future_times = [(NOW + timedelta(hours=h)).isoformat() for h in range(1, 380)]
+    payload = {
+        "hourly": {
+            "time": past["time"] + future_times,
+            "precipitation": past["precipitation"] + [5.0] * len(future_times),
+        }
+    }
+
+    result = fetch_antecedent_rainfall(client=_client_for(payload), now=NOW)
+
+    assert result == {"precip_mm": 0.0, "precip_prev_24h_mm": 0.0, "precip_prev_48h_mm": 0.0}
+
+
 def test_null_hourly_values_are_excluded_not_summed_as_zero():
     payload = _hourly_payload(hours_back=76, precip_mm=1.0)  # see comment above
     payload["hourly"]["precipitation"][0] = None  # the oldest (-76h) entry is null

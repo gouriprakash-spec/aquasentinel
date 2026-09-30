@@ -79,7 +79,12 @@ def fetch_antecedent_rainfall(
         )
 
     precip_mm = sum(value for ts, value in hours if local_midnight <= ts <= now)
-    precip_prev_24h_mm = sum(value for ts, value in hours if now - ts <= timedelta(hours=24))
+    # Bounded on BOTH sides: Open-Meteo returns forecast hours after `now` in the same
+    # series (hundreds of them, verified live), and `now - ts` is negative for every one,
+    # so a one-sided `<= 24h` check would add forecast rain to an observed-rain figure.
+    precip_prev_24h_mm = sum(
+        value for ts, value in hours if timedelta(0) <= now - ts <= timedelta(hours=24)
+    )
     precip_prev_48h_mm = sum(
         value for ts, value in hours if day_1_start <= ts < day_1_end or day_2_start <= ts < day_2_end
     )
