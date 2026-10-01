@@ -100,3 +100,36 @@ def test_monkeypatched_db_path_is_honored(monkeypatch, tmp_path):
 
     assert db_path.exists()
     assert len(db.get_recent_readings()) == 1
+
+
+def test_persists_cso_trigger_info_when_present(tmp_path):
+    db_path = tmp_path / "test.db"
+    db.init_db(db_path=db_path)
+    reading = _fake_reading()
+    reading["evidence"]["cso_status"] = {
+        "outfall_name": "D_25", "status": 3, "distance_km": 4.33,
+        "last_poll": "2026-10-01T10:00:00+00:00",
+    }
+
+    db.insert_reading(reading, db_path=db_path)
+
+    row = db.get_recent_readings(db_path=db_path)[0]
+    assert row["cso_outfall_name"] == "D_25"
+    assert row["cso_outfall_status"] == 3
+    assert row["cso_distance_km"] == 4.33
+    assert row["cso_last_poll"] == "2026-10-01T10:00:00+00:00"
+
+
+def test_persists_null_cso_fields_when_not_triggered(tmp_path):
+    db_path = tmp_path / "test.db"
+    db.init_db(db_path=db_path)
+    reading = _fake_reading()
+    reading["evidence"]["cso_status"] = None
+
+    db.insert_reading(reading, db_path=db_path)
+
+    row = db.get_recent_readings(db_path=db_path)[0]
+    assert row["cso_outfall_name"] is None
+    assert row["cso_outfall_status"] is None
+    assert row["cso_distance_km"] is None
+    assert row["cso_last_poll"] is None

@@ -35,6 +35,11 @@ CREATE TABLE IF NOT EXISTS readings (
     decision_basis TEXT,
     rule_threshold_mm REAL,
     model_probability_unsafe REAL,
+    -- Milestone 6: which outfall (if any) escalated this reading to Unsafe.
+    cso_outfall_name TEXT,
+    cso_outfall_status INTEGER,
+    cso_distance_km REAL,
+    cso_last_poll TEXT,
     threshold_cfu_100ml INTEGER NOT NULL,
     model_version TEXT NOT NULL,
     regime TEXT NOT NULL,
@@ -70,6 +75,7 @@ def insert_reading(reading: dict, db_path: Path | None = None) -> int:
     evidence = reading["evidence"]
     proxies = evidence["proxies"]
     rainfall = evidence["rainfall_mm"]
+    cso_status = evidence.get("cso_status") or {}
     with _connect(db_path) as conn:
         cursor = conn.execute(
             """
@@ -79,8 +85,9 @@ def insert_reading(reading: dict, db_path: Path | None = None) -> int:
                 precip_mm, precip_prev_24h_mm,
                 precip_prev_48h_mm, rainfall_source, decision_basis, rule_threshold_mm,
                 model_probability_unsafe,
+                cso_outfall_name, cso_outfall_status, cso_distance_km, cso_last_poll,
                 threshold_cfu_100ml, model_version, regime, retrieved_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 reading["location"],
@@ -99,6 +106,10 @@ def insert_reading(reading: dict, db_path: Path | None = None) -> int:
                 evidence.get("decision_basis"),
                 evidence.get("rule_threshold_mm"),
                 evidence.get("model_probability_unsafe"),
+                cso_status.get("outfall_name"),
+                cso_status.get("status"),
+                cso_status.get("distance_km"),
+                cso_status.get("last_poll"),
                 reading["threshold_cfu_100ml"],
                 reading["model_version"],
                 reading["regime"],
