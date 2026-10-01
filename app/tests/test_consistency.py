@@ -85,3 +85,38 @@ def test_mcp_status_and_readings_agree_on_tier_and_timestamp(monkeypatch, tmp_pa
         assert surface["proxies"]["precip_prev_48h_mm"] == readings[0]["precip_prev_48h_mm"] == 12.7
         assert surface["decision_basis"] == readings[0]["decision_basis"] == "rainfall_rule"
         assert surface["rule_threshold_mm"] == readings[0]["rule_threshold_mm"] == 2.5
+
+
+def _fake_cso_reading() -> dict:
+    reading = _fake_reading("Unsafe")
+    reading["confidence"] = 0.3
+    reading["evidence"]["decision_basis"] = "cso_overflow_rule"
+    reading["evidence"]["cso_status"] = {
+        "outfall_name": "D_25", "status": 3, "distance_km": 4.33,
+        "last_poll": "2026-10-01T10:00:00+00:00",
+    }
+    return reading
+
+
+def test_mcp_status_and_readings_agree_on_a_cso_escalated_reading(monkeypatch, tmp_path):
+    monkeypatch.setattr(db, "DB_PATH", tmp_path / "test.db")
+    monkeypatch.setattr(fhir_store, "DB_PATH", tmp_path / "test.db")
+    monkeypatch.setattr(server, "pull_reading", lambda: _fake_cso_reading())
+    db.init_db()
+    fhir_store.init_db()
+
+    client = TestClient(server.app)
+    pulled = client.post("/api/pull-reading")
+    assert pulled.status_code == 200
+
+    readings = db.get_recent_readings(limit=1)
+    status_response = client.get("/api/status")
+    status_body = status_response.json()
+    mcp_result = asyncio.run(mcp_server.get_current_status("penns_landing"))
+
+    for surface in (status_body, mcp_result):
+        assert surface["risk_tier"] == "Unsafe"
+        assert surface["confidence"] == readings[0]["confidence"] == 0.3
+        assert surface["decision_basis"] == readings[0]["decision_basis"] == "cso_overflow_rule"
+        assert surface["cso_status"]["outfall_name"] == readings[0]["cso_outfall_name"] == "D_25"
+        assert surface["cso_status"]["status"] == readings[0]["cso_outfall_status"] == 3
