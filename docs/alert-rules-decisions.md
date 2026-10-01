@@ -60,4 +60,9 @@ Decisions made one at a time on Sep 23, 2026, and applied to `docs/product-brief
 - ~~Low-confidence cutoff: set from the trained model's validation results.~~ Resolved
   2026-09-27 - see decision 6 and `app/config.py:LOW_CONFIDENCE_CUTOFF`.
 - Forecast rain threshold T: derive from our rainfall data.
-- CSO outfall set near Penn's Landing: research PWD outfall locations and the tidal excursion.
+- ~~CSO outfall set near Penn's Landing: research PWD outfall locations and the tidal
+  excursion.~~ Resolved 2026-10-01 - a 5km radius from Penn's Landing (not a hand-picked
+  outfall list), chosen from real outfall density and a real observed live overflow event,
+  not a published tidal-excursion figure (none was found). See
+  `docs/superpowers/specs/2026-10-01-cso-overflow-rule-milestone6-design.md`'s Scope
+  decisions and Honesty notes.

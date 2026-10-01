@@ -165,6 +165,10 @@ def test_risk_observation_method_describes_the_rule_not_random_forest():
 
     assert "random forest" not in method_text.lower()
     assert "rule" in method_text.lower()
+    # The new CSO method text ("...overrides the rainfall rule") also contains "rule," so
+    # the substring check above no longer discriminates the non-CSO case on its own -
+    # pin the exact rainfall-rule text too.
+    assert method_text == resources.RISK_METHOD_TEXT["rainfall_rule"]
 
 
 def test_build_cso_observation_shape():
