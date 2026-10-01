@@ -156,7 +156,10 @@
         <strong><span id="ruleThreshold">the rule threshold</span> mm</strong>. A model trained on
         past DRBC E. coli samples taken near shore at Penn's Landing runs alongside it;
         &ldquo;rule/model agreement&rdquo; shows how strongly that model agrees with the rule, and
-        is not the model's own verdict. Ben Franklin Bridge and Navy Yard are DRBC channel
+        is not the model's own verdict. A nearby, fresh, actively or recently overflowing
+        combined-sewer outfall can also force the reach <strong>Unsafe</strong>, overriding the
+        rainfall rule &mdash; the banner then names the outfall instead of showing the rain
+        amount. Ben Franklin Bridge and Navy Yard are DRBC channel
         stations, shown for context.</div>
     </div>
     <div style="display:flex;align-items:center;gap:14px;flex:none;">
@@ -282,6 +285,14 @@
 
   function round1(x){ return Math.round(x*10)/10; }
 
+  // This codebase builds the DOM via innerHTML string concatenation throughout (no
+  // templating engine) - csoOutfallName is the first field that flows into innerHTML from
+  // a live third-party feed (PWD's CSOcast). Not attacker-controlled today, but it is
+  // untrusted text, so escape it before interpolating rather than trusting it as-is.
+  function escapeHtml(s){
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
   // For values that can legitimately be missing (e.g. rows stored before Milestone 1b
   // recorded the 48h rain). round1(null) would print 0 - a made-up all-clear - so show a
   // dash instead.
@@ -307,6 +318,17 @@
     var ruleThreshold = isStored ? reading.rule_threshold_mm : reading.evidence.rule_threshold_mm;
     var rainSource = isStored ? reading.rainfall_source : reading.evidence.rainfall_source;
     var time = isStored ? reading.reading_time : reading.time;
+    // What actually decided the tier (Milestone 6): the rainfall rule, or a nearby
+    // CSO overflow overriding it. Read from both reading shapes, following the same
+    // isStored/live pattern as every other field above.
+    var decisionBasis = isStored ? reading.decision_basis : reading.evidence.decision_basis;
+    var liveCsoStatus = !isStored ? reading.evidence.cso_status : null;
+    var csoOutfallName = isStored
+      ? reading.cso_outfall_name
+      : (liveCsoStatus ? liveCsoStatus.outfall_name : null);
+    var csoDistanceKm = isStored
+      ? reading.cso_distance_km
+      : (liveCsoStatus ? liveCsoStatus.distance_km : null);
     return {
       time: formatTime(time),
       rainToday: round1(rainToday),
@@ -320,7 +342,10 @@
       dox: round1(proxies.dissolved_oxygen_mgl),
       ph: round1(proxies.ph),
       confidencePct: Math.round(reading.confidence * 100),
-      status: reading.risk_tier
+      status: reading.risk_tier,
+      decisionBasis: decisionBasis,
+      csoOutfallName: csoOutfallName,
+      csoDistanceKm: csoDistanceKm
     };
   }
 
@@ -386,12 +411,26 @@
     var s = statusStyle(latest.status === "Unsafe");
     b.style.background = latest.status === "Unsafe" ? '#FDF2F0' : '#EEF7F1';
     b.style.border = '1px solid ' + (latest.status === "Unsafe" ? '#F0CFC8' : '#C7E4D3');
+    var reasonClause;
+    if (latest.decisionBasis === 'cso_overflow_rule'){
+      // CSO-escalated: say why, per docs/alert-rules-decisions.md decision 1 - and never
+      // show "rule/model agreement" here, since CSO_OVERRIDE_CONFIDENCE is a deliberately
+      // low fixed constant signaling "needs a confirmatory sample," not model/rule
+      // agreement.
+      reasonClause =
+        ' &middot; sewer overflow near outfall <strong>'+escapeHtml(latest.csoOutfallName)+'</strong>' +
+        ' ('+latest.csoDistanceKm+' km from Penn\'s Landing)';
+    } else {
+      reasonClause =
+        ' &middot; rain over the prior 2 days <strong>'+latest.rain48+' mm</strong>' +
+        ' (Unsafe at &ge; '+latest.ruleThreshold+' mm)' +
+        ' &middot; rule/model agreement <strong>'+latest.confidencePct+'%</strong>';
+    }
     b.innerHTML =
       '<span class="dot" style="background:'+s.color+'"></span>' +
       '<div>Latest reading &mdash; <span class="disp" style="font-weight:700;color:'+s.color+'">'+latest.status+'</span>' +
-      ' &middot; rain over the prior 2 days <strong>'+latest.rain48+' mm</strong>' +
-      ' (Unsafe at &ge; '+latest.ruleThreshold+' mm)' +
-      ' &middot; rule/model agreement <strong>'+latest.confidencePct+'%</strong> &middot; Center City reach &middot; '+latest.time+
+      reasonClause +
+      ' &middot; Center City reach &middot; '+latest.time+
       ' <span style="color:var(--faint);">&middot; Source: AquaSentinel estimate' +
       (latest.rainSource ? '; rain from '+latest.rainSource : '') + '</span></div>';
     document.getElementById('ruleThreshold').innerHTML = latest.ruleThreshold;

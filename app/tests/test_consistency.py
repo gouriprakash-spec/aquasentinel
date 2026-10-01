@@ -120,3 +120,13 @@ def test_mcp_status_and_readings_agree_on_a_cso_escalated_reading(monkeypatch, t
         assert surface["decision_basis"] == readings[0]["decision_basis"] == "cso_overflow_rule"
         assert surface["cso_status"]["outfall_name"] == readings[0]["cso_outfall_name"] == "D_25"
         assert surface["cso_status"]["status"] == readings[0]["cso_outfall_status"] == 3
+
+    # Final-review finding (Critical #1): GET /api/readings is the third surface the
+    # dashboard actually reads (via loadRecentReadings()), not just /api/status and MCP -
+    # it must carry the same CSO trigger info the stored row and the other two surfaces do.
+    readings_response = client.get("/api/readings?limit=1")
+    assert readings_response.status_code == 200
+    readings_body = readings_response.json()
+    assert readings_body[0]["decision_basis"] == "cso_overflow_rule"
+    assert readings_body[0]["cso_outfall_name"] == "D_25"
+    assert readings_body[0]["cso_distance_km"] == 4.33
