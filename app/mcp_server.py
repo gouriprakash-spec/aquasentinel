@@ -17,7 +17,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
 from app import db
-from app.fhir.resources import LOCATION_LAT, LOCATION_LON
+from app.config import LOCATION_LAT, LOCATION_LON
 from app.scoring.pull_reading import LOCATION_ID, LOCATION_NAME
 from app.status import build_status_contract, current_status
 
@@ -77,13 +77,21 @@ async def get_current_status(location_id: str) -> dict:
         On success: {"location": str, "time": str, "risk_tier": "Safe"|"Unsafe",
         "confidence": float, "source": str, "source_url": str, "retrieved_at": str,
         "threshold_cfu_100ml": int, "model_version": str, "regime": str,
-        "decision_basis": "rainfall_rule", "rule_threshold_mm": float,
+        "decision_basis": "rainfall_rule"|"cso_overflow_rule", "rule_threshold_mm": float,
         "rainfall_source": "nws"|"open-meteo", "model_probability_unsafe": float,
-        "proxies": {..., "precip_prev_48h_mm": float}, "kind": "model_estimate"}
-        risk_tier is decided by the rainfall rule: Unsafe when proxies.precip_prev_48h_mm
-        (rain over the two prior local calendar days) >= rule_threshold_mm. A model's
-        model_probability_unsafe only informs confidence, which is how strongly the model
-        agrees with the rule - not the model's own certainty.
+        "cso_status": null | {"outfall_name": str, "status": int, "distance_km": float,
+        "last_poll": str}, "proxies": {..., "precip_prev_48h_mm": float},
+        "kind": "model_estimate"}
+        Ordinarily risk_tier is decided by the rainfall rule: Unsafe when
+        proxies.precip_prev_48h_mm (rain over the two prior local calendar days) >=
+        rule_threshold_mm, and a model's model_probability_unsafe only informs confidence
+        (how strongly the model agrees with the rule). But a nearby, fresh, actively or
+        recently overflowing combined-sewer outfall (Milestone 6) OVERRIDES that: it forces
+        risk_tier to "Unsafe" regardless of the rainfall rule's own verdict, sets
+        decision_basis to "cso_overflow_rule", and populates cso_status with the
+        triggering outfall. In that case confidence is a deliberately low fixed value
+        signaling low certainty - it queues a confirmatory sample - not model/rule
+        agreement.
         On an unknown location or no reading yet: {"status": "unavailable", "reason": str}
     """
     if location_id != LOCATION_ID:
