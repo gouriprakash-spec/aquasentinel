@@ -17,6 +17,14 @@ from app.scoring.pull_reading import SOURCE_NAME, SOURCE_URL
 
 
 def build_status_contract(row: dict) -> dict:
+    cso_status = None
+    if row["cso_outfall_name"] is not None:
+        cso_status = {
+            "outfall_name": row["cso_outfall_name"],
+            "status": row["cso_outfall_status"],
+            "distance_km": row["cso_distance_km"],
+            "last_poll": row["cso_last_poll"],
+        }
     return {
         "location": row["location"],
         "time": row["reading_time"],
@@ -36,6 +44,7 @@ def build_status_contract(row: dict) -> dict:
         "rule_threshold_mm": row["rule_threshold_mm"],
         "rainfall_source": row["rainfall_source"],
         "model_probability_unsafe": row["model_probability_unsafe"],
+        "cso_status": cso_status,
         "proxies": {
             "water_temp_c": row["water_temp_c"],
             "sp_conductance_uscm": row["sp_conductance_uscm"],

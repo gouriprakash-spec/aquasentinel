@@ -28,6 +28,10 @@ def _row() -> dict:
         "decision_basis": "rainfall_rule",
         "rule_threshold_mm": 2.5,
         "model_probability_unsafe": 0.18,
+        "cso_outfall_name": None,
+        "cso_outfall_status": None,
+        "cso_distance_km": None,
+        "cso_last_poll": None,
         "threshold_cfu_100ml": 235,
         "model_version": "rf_nearshore",
         "regime": "nearshore",
@@ -116,3 +120,26 @@ def test_current_status_returns_unavailable_when_no_reading_exists():
     result = current_status(None)
 
     assert result == {"status": "unavailable", "reason": "no readings yet"}
+
+
+def test_build_status_contract_cso_status_is_none_when_not_triggered():
+    contract = build_status_contract(_row())
+
+    assert contract["cso_status"] is None
+
+
+def test_build_status_contract_includes_cso_status_when_triggered():
+    row = _row()
+    row["cso_outfall_name"] = "D_25"
+    row["cso_outfall_status"] = 3
+    row["cso_distance_km"] = 4.33
+    row["cso_last_poll"] = "2026-10-01T10:00:00+00:00"
+
+    contract = build_status_contract(row)
+
+    assert contract["cso_status"] == {
+        "outfall_name": "D_25",
+        "status": 3,
+        "distance_km": 4.33,
+        "last_poll": "2026-10-01T10:00:00+00:00",
+    }
