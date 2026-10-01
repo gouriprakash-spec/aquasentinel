@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sqlite3
+
 from app import db
 
 
@@ -112,6 +114,62 @@ def test_persists_cso_trigger_info_when_present(tmp_path):
     }
 
     db.insert_reading(reading, db_path=db_path)
+
+    row = db.get_recent_readings(db_path=db_path)[0]
+    assert row["cso_outfall_name"] == "D_25"
+    assert row["cso_outfall_status"] == 3
+    assert row["cso_distance_km"] == 4.33
+    assert row["cso_last_poll"] == "2026-10-01T10:00:00+00:00"
+
+
+def test_init_db_migrates_an_existing_pre_milestone_6_database(tmp_path):
+    """Final-review finding (Important #3): CREATE TABLE IF NOT EXISTS is a no-op against a
+    table that already exists with the OLD schema (no cso_* columns) - reproduced directly
+    against a copy of this worktree's own aquasentinel.db, insert_reading() raised
+    sqlite3.OperationalError: table readings has no column named cso_outfall_name.
+    init_db() must migrate an existing old-schema file in place, not just create-if-missing.
+    """
+    db_path = tmp_path / "old_schema.db"
+    # Build the pre-Milestone-6 schema by hand - the full column list above (db.py's own
+    # _SCHEMA constant) minus the 4 cso_* columns added in Milestone 6.
+    conn = sqlite3.connect(db_path)
+    conn.executescript(
+        """
+        CREATE TABLE readings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            location TEXT NOT NULL,
+            reading_time TEXT NOT NULL,
+            risk_tier TEXT NOT NULL,
+            confidence REAL NOT NULL,
+            water_temp_c REAL,
+            sp_conductance_uscm REAL,
+            dissolved_oxygen_mgl REAL,
+            ph REAL,
+            turbidity_fnu REAL,
+            precip_mm REAL,
+            precip_prev_24h_mm REAL,
+            precip_prev_48h_mm REAL,
+            rainfall_source TEXT,
+            decision_basis TEXT,
+            rule_threshold_mm REAL,
+            model_probability_unsafe REAL,
+            threshold_cfu_100ml INTEGER NOT NULL,
+            model_version TEXT NOT NULL,
+            regime TEXT NOT NULL,
+            retrieved_at TEXT NOT NULL
+        );
+        """
+    )
+    conn.close()
+
+    db.init_db(db_path=db_path)
+
+    reading = _fake_reading()
+    reading["evidence"]["cso_status"] = {
+        "outfall_name": "D_25", "status": 3, "distance_km": 4.33,
+        "last_poll": "2026-10-01T10:00:00+00:00",
+    }
+    db.insert_reading(reading, db_path=db_path)  # must not raise OperationalError
 
     row = db.get_recent_readings(db_path=db_path)[0]
     assert row["cso_outfall_name"] == "D_25"

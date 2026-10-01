@@ -65,9 +65,30 @@ def _connect(db_path: Path | None = None) -> sqlite3.Connection:
     return conn
 
 
+_CSO_COLUMNS = [
+    ("cso_outfall_name", "TEXT"),
+    ("cso_outfall_status", "INTEGER"),
+    ("cso_distance_km", "REAL"),
+    ("cso_last_poll", "TEXT"),
+]
+
+
 def init_db(db_path: Path | None = None) -> None:
     with _connect(db_path) as conn:
         conn.executescript(_SCHEMA)
+        _migrate_cso_columns(conn)
+
+
+def _migrate_cso_columns(conn: sqlite3.Connection) -> None:
+    """CREATE TABLE IF NOT EXISTS is a no-op on an existing table - a readings table
+    created before Milestone 6 is missing the 4 cso_* columns. Add whichever are missing
+    so an existing database keeps working after this upgrade, instead of every
+    insert_reading() call raising OperationalError.
+    """
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(readings)")}
+    for column_name, column_type in _CSO_COLUMNS:
+        if column_name not in existing:
+            conn.execute(f"ALTER TABLE readings ADD COLUMN {column_name} {column_type}")
 
 
 def insert_reading(reading: dict, db_path: Path | None = None) -> int:
