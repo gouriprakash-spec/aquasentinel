@@ -10,7 +10,9 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from app import config
 from app.ingestion import open_meteo
+from app.ingestion.csocast import CsoDataUnavailable, OutfallReading
 from app.ingestion.nws import RainfallUnavailable
 from app.ingestion.usgs import ProxyReading
 from app.scoring import pull_reading as pr
@@ -34,6 +36,7 @@ def _fake_rainfall(precip_prev_48h_mm: float = 0.0) -> dict:
 def test_pull_reading_returns_the_shared_signal_contract(monkeypatch):
     monkeypatch.setattr(pr, "fetch_usgs_proxies", lambda: _fake_proxies())
     monkeypatch.setattr(pr, "fetch_nws_rainfall", lambda: _fake_rainfall())
+    monkeypatch.setattr(pr, "fetch_cso_outfalls", lambda: [])
 
     reading = pr.pull_reading()
 
@@ -54,6 +57,7 @@ def test_pull_reading_returns_the_shared_signal_contract(monkeypatch):
 def test_evidence_carries_the_raw_proxies_and_rainfall(monkeypatch):
     monkeypatch.setattr(pr, "fetch_usgs_proxies", lambda: _fake_proxies())
     monkeypatch.setattr(pr, "fetch_nws_rainfall", lambda: _fake_rainfall())
+    monkeypatch.setattr(pr, "fetch_cso_outfalls", lambda: [])
 
     reading = pr.pull_reading()
 
@@ -69,6 +73,7 @@ def test_falls_back_to_open_meteo_when_nws_rainfall_is_unavailable(monkeypatch):
     monkeypatch.setattr(pr, "fetch_usgs_proxies", lambda: _fake_proxies())
     monkeypatch.setattr(pr, "fetch_nws_rainfall", _raise)
     monkeypatch.setattr(open_meteo, "fetch_antecedent_rainfall", lambda: _fake_rainfall())
+    monkeypatch.setattr(pr, "fetch_cso_outfalls", lambda: [])
 
     reading = pr.pull_reading()
 
@@ -83,6 +88,7 @@ def test_uses_the_oldest_proxy_reading_as_the_reading_time(monkeypatch):
 
     monkeypatch.setattr(pr, "fetch_usgs_proxies", lambda: proxies)
     monkeypatch.setattr(pr, "fetch_nws_rainfall", lambda: _fake_rainfall())
+    monkeypatch.setattr(pr, "fetch_cso_outfalls", lambda: [])
 
     reading = pr.pull_reading()
 
@@ -94,6 +100,7 @@ def test_the_rainfall_rule_decides_the_tier_not_the_model(monkeypatch):
     of what the model's own probability happens to be."""
     monkeypatch.setattr(pr, "fetch_usgs_proxies", lambda: _fake_proxies())
     monkeypatch.setattr(pr, "fetch_nws_rainfall", lambda: _fake_rainfall(precip_prev_48h_mm=50.0))
+    monkeypatch.setattr(pr, "fetch_cso_outfalls", lambda: [])
 
     reading = pr.pull_reading()
 
@@ -137,6 +144,7 @@ def test_confidence_is_high_when_rule_and_model_agree(monkeypatch):
     monkeypatch.setattr(pr, "fetch_usgs_proxies", lambda: _fake_proxies())
     monkeypatch.setattr(pr, "fetch_nws_rainfall", lambda: _fake_rainfall(precip_prev_48h_mm=0.0))  # rule: Safe
     monkeypatch.setattr(pr, "_load_model", lambda: _stub_bundle(probability_unsafe=0.1))  # model agrees
+    monkeypatch.setattr(pr, "fetch_cso_outfalls", lambda: [])
 
     reading = pr.pull_reading()
 
@@ -148,6 +156,7 @@ def test_confidence_is_low_when_rule_and_model_disagree(monkeypatch):
     monkeypatch.setattr(pr, "fetch_usgs_proxies", lambda: _fake_proxies())
     monkeypatch.setattr(pr, "fetch_nws_rainfall", lambda: _fake_rainfall(precip_prev_48h_mm=0.0))  # rule: Safe
     monkeypatch.setattr(pr, "_load_model", lambda: _stub_bundle(probability_unsafe=0.9))  # model disagrees
+    monkeypatch.setattr(pr, "fetch_cso_outfalls", lambda: [])
 
     reading = pr.pull_reading()
 
@@ -159,6 +168,7 @@ def test_confidence_is_low_when_rule_and_model_disagree(monkeypatch):
 def test_evidence_still_carries_turbidity_even_though_the_model_no_longer_uses_it(monkeypatch):
     monkeypatch.setattr(pr, "fetch_usgs_proxies", lambda: _fake_proxies())
     monkeypatch.setattr(pr, "fetch_nws_rainfall", lambda: _fake_rainfall())
+    monkeypatch.setattr(pr, "fetch_cso_outfalls", lambda: [])
 
     reading = pr.pull_reading()
 
@@ -170,7 +180,70 @@ def test_evidence_reports_the_rule_threshold_used(monkeypatch):
 
     monkeypatch.setattr(pr, "fetch_usgs_proxies", lambda: _fake_proxies())
     monkeypatch.setattr(pr, "fetch_nws_rainfall", lambda: _fake_rainfall())
+    monkeypatch.setattr(pr, "fetch_cso_outfalls", lambda: [])
 
     reading = pr.pull_reading()
 
     assert reading["evidence"]["rule_threshold_mm"] == config.RAIN_FALLBACK_THRESHOLD_MM
+
+
+def _outfall(status: int, name: str = "D_test") -> OutfallReading:
+    return OutfallReading(
+        name=name, status=status, distance_km=1.0,
+        last_poll=datetime(2026, 9, 25, tzinfo=timezone.utc),
+    )
+
+
+def test_cso_overflow_escalates_a_safe_rainfall_reading_to_unsafe(monkeypatch):
+    monkeypatch.setattr(pr, "fetch_usgs_proxies", lambda: _fake_proxies())
+    monkeypatch.setattr(pr, "fetch_nws_rainfall", lambda: _fake_rainfall(precip_prev_48h_mm=0.0))
+    monkeypatch.setattr(pr, "fetch_cso_outfalls", lambda: [_outfall(status=4)])
+
+    reading = pr.pull_reading()
+
+    assert reading["risk_tier"] == "Unsafe"
+    assert reading["confidence"] == config.CSO_OVERRIDE_CONFIDENCE
+    assert reading["evidence"]["decision_basis"] == "cso_overflow_rule"
+    assert reading["evidence"]["cso_status"]["outfall_name"] == "D_test"
+    assert reading["evidence"]["cso_status"]["status"] == 4
+
+
+def test_cso_rule_does_not_override_when_no_outfall_triggers(monkeypatch):
+    monkeypatch.setattr(pr, "fetch_usgs_proxies", lambda: _fake_proxies())
+    monkeypatch.setattr(pr, "fetch_nws_rainfall", lambda: _fake_rainfall(precip_prev_48h_mm=0.0))
+    monkeypatch.setattr(pr, "fetch_cso_outfalls", lambda: [_outfall(status=1)])
+
+    reading = pr.pull_reading()
+
+    assert reading["risk_tier"] == "Safe"
+    assert reading["evidence"]["decision_basis"] == "rainfall_rule"
+    assert reading["evidence"]["cso_status"] is None
+
+
+def test_total_cso_outage_still_produces_a_valid_reading(monkeypatch):
+    """Review Focus #2: a total CSOcast outage must NOT fail the reading closed, unlike the
+    USGS gauge - see the Global Constraints section of this plan."""
+    def _raise():
+        raise CsoDataUnavailable("feed down")
+
+    monkeypatch.setattr(pr, "fetch_usgs_proxies", lambda: _fake_proxies())
+    monkeypatch.setattr(pr, "fetch_nws_rainfall", lambda: _fake_rainfall(precip_prev_48h_mm=0.0))
+    monkeypatch.setattr(pr, "fetch_cso_outfalls", _raise)
+
+    reading = pr.pull_reading()  # must not raise
+
+    assert reading["risk_tier"] == "Safe"
+    assert reading["evidence"]["decision_basis"] == "rainfall_rule"
+    assert reading["evidence"]["cso_status"] is None
+
+
+def test_cso_trigger_on_an_already_unsafe_reading_still_overwrites_confidence_and_basis(monkeypatch):
+    monkeypatch.setattr(pr, "fetch_usgs_proxies", lambda: _fake_proxies())
+    monkeypatch.setattr(pr, "fetch_nws_rainfall", lambda: _fake_rainfall(precip_prev_48h_mm=50.0))
+    monkeypatch.setattr(pr, "fetch_cso_outfalls", lambda: [_outfall(status=3)])
+
+    reading = pr.pull_reading()
+
+    assert reading["risk_tier"] == "Unsafe"
+    assert reading["confidence"] == config.CSO_OVERRIDE_CONFIDENCE
+    assert reading["evidence"]["decision_basis"] == "cso_overflow_rule"

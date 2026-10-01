@@ -23,9 +23,12 @@ import joblib
 
 from app import config
 from app.ingestion import open_meteo
+from app.ingestion.csocast import CsoDataUnavailable
+from app.ingestion.csocast import fetch_nearby_outfalls as fetch_cso_outfalls
 from app.ingestion.nws import RainfallUnavailable
 from app.ingestion.nws import fetch_antecedent_rainfall as fetch_nws_rainfall
 from app.ingestion.usgs import fetch_usgs_proxies
+from app.model.cso_rule import apply_cso_escalation
 from app.model.rules_fallback import classify_by_rainfall
 
 ARTIFACTS_DIR = Path(__file__).resolve().parents[1] / "model" / "artifacts"
@@ -72,6 +75,21 @@ def pull_reading() -> dict:
     # certainty in its own decision.
     confidence = probability_unsafe if risk_tier == "Unsafe" else (1.0 - probability_unsafe)
 
+    nearby_outfalls = _fetch_cso_signal()
+    escalation = apply_cso_escalation(risk_tier, confidence, nearby_outfalls)
+    risk_tier = escalation["risk_tier"]
+    confidence = escalation["confidence"]
+    decision_basis = escalation["decision_basis"] or "rainfall_rule"
+    cso_status = None
+    if escalation["triggered_outfall"] is not None:
+        outfall = escalation["triggered_outfall"]
+        cso_status = {
+            "outfall_name": outfall.name,
+            "status": outfall.status,
+            "distance_km": round(outfall.distance_km, 2),
+            "last_poll": outfall.last_poll.isoformat(),
+        }
+
     oldest_proxy_time = min(reading.retrieved_at for reading in proxies.values())
 
     return {
@@ -90,9 +108,10 @@ def pull_reading() -> dict:
             },
             "rainfall_mm": rainfall,
             "rainfall_source": rainfall_source,
-            "decision_basis": "rainfall_rule",
+            "decision_basis": decision_basis,
             "rule_threshold_mm": config.RAIN_FALLBACK_THRESHOLD_MM,
             "model_probability_unsafe": round(probability_unsafe, 3),
+            "cso_status": cso_status,
         },
         "threshold_cfu_100ml": config.UNSAFE_THRESHOLD_CFU_100ML,
         "model_version": "rf_nearshore",
@@ -111,6 +130,17 @@ def _fetch_rainfall() -> tuple[dict, str]:
         return fetch_nws_rainfall(), "nws"
     except RainfallUnavailable:
         return open_meteo.fetch_antecedent_rainfall(), "open-meteo"
+
+
+def _fetch_cso_signal() -> list:
+    """CSOcast is an escalation-only add-on, not a required input (spec Scope decision 5): a
+    total outage must not fail the reading closed the way a stale USGS gauge does - it just
+    means no CSO signal this cycle, identical in effect to every nearby outfall being stale.
+    """
+    try:
+        return fetch_cso_outfalls()
+    except CsoDataUnavailable:
+        return []
 
 
 def _build_feature_vector(proxies: dict, rainfall: dict, features_order: list[str]) -> list[float]:
