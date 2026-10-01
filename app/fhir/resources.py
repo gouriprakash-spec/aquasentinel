@@ -116,17 +116,67 @@ def build_rainfall_observation(reading: dict) -> dict:
     return {"fullUrl": f"urn:uuid:{uuid.uuid4()}", "resource": resource}
 
 
+CSO_STATUS_DISPLAY = {
+    3: "Overflow occurred in the past 72 hours",
+    4: "Currently overflowing",
+}
+
+
+def build_cso_observation(reading: dict) -> dict:
+    """The outfall that triggered a CSO escalation. Only built when decision_basis is
+    "cso_overflow_rule" (see build_bundle) - required there, not optional: a KeyError means
+    the reading claims CSO decided the tier but can't show which outfall, and the caller must
+    not silently drop that from the Bundle.
+    """
+    cso = reading["evidence"]["cso_status"]
+    status_text = CSO_STATUS_DISPLAY.get(cso["status"], f"Status {cso['status']}")
+    resource = {
+        "resourceType": "Observation",
+        "id": str(uuid.uuid4()),
+        "status": "preliminary",
+        "code": {"text": "Combined sewer outfall overflow status"},
+        "subject": {"reference": f"Location/{LOCATION_ID}"},
+        "effectiveDateTime": reading["time"],
+        "valueCodeableConcept": {"text": status_text},
+        "note": [{
+            "text": f"Outfall {cso['outfall_name']}, {cso['distance_km']} km from Penn's "
+                    f"Landing. Last reported {cso['last_poll']}."
+        }],
+    }
+    return {"fullUrl": f"urn:uuid:{uuid.uuid4()}", "resource": resource}
+
+
+RISK_METHOD_TEXT = {
+    "rainfall_rule": "Estimated (rainfall-rule-based) risk, model-informed confidence",
+    "cso_overflow_rule": (
+        "Estimated risk: active/recent combined-sewer overflow near the reach overrides "
+        "the rainfall rule"
+    ),
+}
+
+
 def build_risk_observation(
-    reading: dict, proxy_entries: list[dict], rainfall_entry: dict
+    reading: dict,
+    proxy_entries: list[dict],
+    rainfall_entry: dict,
+    cso_entry: dict | None = None,
 ) -> dict:
     tier_code = _tier_code(reading["risk_tier"])
+    decision_basis = reading["evidence"].get("decision_basis", "rainfall_rule")
+    method_text = RISK_METHOD_TEXT.get(decision_basis, RISK_METHOD_TEXT["rainfall_rule"])
+
+    derived_from = [{"reference": rainfall_entry["fullUrl"]}]
+    if cso_entry is not None:
+        derived_from.append({"reference": cso_entry["fullUrl"]})
+    derived_from += [{"reference": entry["fullUrl"]} for entry in proxy_entries]
+
     return {
         "fullUrl": f"urn:uuid:{uuid.uuid4()}",
         "resource": {
             "resourceType": "Observation",
             "id": str(uuid.uuid4()),
             "status": "preliminary",
-            "method": {"text": "Estimated (rainfall-rule-based) risk, model-informed confidence"},
+            "method": {"text": method_text},
             "code": {"text": "E. coli risk tier estimate"},
             "subject": {"reference": f"Location/{LOCATION_ID}"},
             "effectiveDateTime": reading["time"],
@@ -136,10 +186,9 @@ def build_risk_observation(
                 ],
                 "text": reading["risk_tier"],
             },
-            # The rainfall value first: it is what decided the tier. The proxies follow as
-            # context (and, minus turbidity, as the confidence model's inputs).
-            "derivedFrom": [{"reference": rainfall_entry["fullUrl"]}]
-            + [{"reference": entry["fullUrl"]} for entry in proxy_entries],
+            # The rainfall value first (always present: it's what decided the tier, or what
+            # the CSO rule overrode), then CSO if it's what actually decided it, then proxies.
+            "derivedFrom": derived_from,
         },
     }
 
@@ -165,10 +214,18 @@ def build_bundle(reading: dict, flag: dict) -> dict:
     location_entry = {"fullUrl": f"urn:uuid:{uuid.uuid4()}", "resource": build_location()}
     proxy_entries = build_proxy_observations(reading)
     rainfall_entry = build_rainfall_observation(reading)
-    risk_entry = build_risk_observation(reading, proxy_entries, rainfall_entry)
+    decision_basis = reading["evidence"].get("decision_basis", "rainfall_rule")
+    cso_entry = build_cso_observation(reading) if decision_basis == "cso_overflow_rule" else None
+    risk_entry = build_risk_observation(reading, proxy_entries, rainfall_entry, cso_entry)
     flag_entry = {"fullUrl": f"urn:uuid:{uuid.uuid4()}", "resource": flag}
+
+    entries = [location_entry, rainfall_entry]
+    if cso_entry is not None:
+        entries.append(cso_entry)
+    entries += proxy_entries + [risk_entry, flag_entry]
+
     return {
         "resourceType": "Bundle",
         "type": "collection",
-        "entry": [location_entry, rainfall_entry] + proxy_entries + [risk_entry, flag_entry],
+        "entry": entries,
     }
