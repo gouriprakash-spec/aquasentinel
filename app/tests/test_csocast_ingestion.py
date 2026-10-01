@@ -106,3 +106,71 @@ def test_returns_the_outfalls_status_for_the_rule_to_check():
     assert result[0].status == 4
     assert result[0].name == "D_overflow"
     assert result[0].distance_km < 1.1
+
+
+# --- Final-review finding (Important #2): malformed CSOcast responses must never 500 the
+# whole reading - a glitch here must always degrade to CsoDataUnavailable (caught by
+# app.scoring.pull_reading._fetch_cso_signal() as "no CSO signal"), never propagate as some
+# other exception type. ---
+
+
+def test_fails_closed_on_an_html_200_body():
+    """response.json() raises a JSONDecodeError (a ValueError) when the server serves an
+    HTML error page with a 200 status - this must still degrade to CsoDataUnavailable."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text="<html><body>Service Temporarily Unavailable</body></html>")
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    with pytest.raises(CsoDataUnavailable):
+        fetch_nearby_outfalls(client=client, now=NOW)
+
+
+def test_fails_closed_on_null_features():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"type": "FeatureCollection", "features": None})
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    with pytest.raises(CsoDataUnavailable):
+        fetch_nearby_outfalls(client=client, now=NOW)
+
+
+def test_fails_closed_on_null_last_poll():
+    feature = _feature("D_bad", status=1, km_from_penns_landing=1.0, age_hours=0.5)
+    feature["properties"]["LastPoll"] = None
+
+    client = _client_for([feature])
+    with pytest.raises(CsoDataUnavailable):
+        fetch_nearby_outfalls(client=client, now=NOW)
+
+
+def test_fails_closed_on_an_absurdly_large_last_poll():
+    """datetime.fromtimestamp raises OSError/OverflowError on a value way out of range -
+    must still degrade to CsoDataUnavailable, not propagate as that exception type."""
+    feature = _feature("D_bad", status=1, km_from_penns_landing=1.0, age_hours=0.5)
+    feature["properties"]["LastPoll"] = 99999999999999999999
+
+    client = _client_for([feature])
+    with pytest.raises(CsoDataUnavailable):
+        fetch_nearby_outfalls(client=client, now=NOW)
+
+
+def test_excludes_an_outfall_with_nan_coordinates_instead_of_passing_the_radius_filter():
+    """nan > CSO_NEARBY_RADIUS_KM is False in Python, so a naive `distance_km > radius`
+    check would silently let a NaN-coordinate outfall pass the filter - the opposite of
+    what's intended. This must be excluded, not treated as an error."""
+    feature = _feature("D_nan", status=4, km_from_penns_landing=1.0, age_hours=0.3)
+    feature["properties"]["Latitude"] = float("nan")
+
+    result = fetch_nearby_outfalls(client=_client_for([feature]), now=NOW)
+
+    assert result == []
+
+
+def test_excludes_an_outfall_with_a_future_last_poll_instead_of_treating_it_as_fresh():
+    """A negative age (clock-skewed/future LastPoll) must not silently pass the
+    `age_hours > freshness` check as if it were fresh."""
+    feature = _feature("D_future", status=4, km_from_penns_landing=1.0, age_hours=-1)
+
+    result = fetch_nearby_outfalls(client=_client_for([feature]), now=NOW)
+
+    assert result == []

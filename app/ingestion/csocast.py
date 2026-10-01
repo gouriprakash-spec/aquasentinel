@@ -54,6 +54,22 @@ def fetch_nearby_outfalls(
     owns_client = client is None
     client = client or httpx.Client(timeout=30.0)
     try:
+        return _fetch_and_filter(client, now)
+    except CsoDataUnavailable:
+        raise
+    except Exception as exc:
+        # Any other failure mode of this one feed (malformed JSON, an HTML error page
+        # served with a 200, a garbage LastPoll value, ...) must never propagate past
+        # this function - spec Scope decision 5: a CSOcast glitch means "no CSO signal
+        # this cycle," never a failed reading.
+        raise CsoDataUnavailable(f"Unexpected CSOcast failure: {exc}") from exc
+    finally:
+        if owns_client:
+            client.close()
+
+
+def _fetch_and_filter(client: httpx.Client, now: datetime) -> list[OutfallReading]:
+    try:
         response = client.get(
             CSOCAST_URL,
             params={
@@ -66,34 +82,34 @@ def fetch_nearby_outfalls(
         payload = response.json()
     except httpx.HTTPError as exc:
         raise CsoDataUnavailable(f"CSOcast request failed: {exc}") from exc
-    finally:
-        if owns_client:
-            client.close()
 
-    try:
-        features = payload["features"]
-    except (KeyError, TypeError) as exc:
-        raise CsoDataUnavailable(f"Unexpected CSOcast response shape: {exc}") from exc
+    features = payload["features"]
+    if not isinstance(features, list):
+        raise CsoDataUnavailable(
+            f"Unexpected CSOcast response shape: features is {type(features).__name__}"
+        )
 
     nearby: list[OutfallReading] = []
     for feature in features:
-        try:
-            props = feature["properties"]
-            name = props["Name"]
-            status = int(props["Status"])
-            lat = float(props["Latitude"])
-            lon = float(props["Longitude"])
-            last_poll_ms = props["LastPoll"]
-        except (KeyError, TypeError, ValueError) as exc:
-            raise CsoDataUnavailable(f"Unexpected CSOcast feature shape: {exc}") from exc
+        props = feature["properties"]
+        name = props["Name"]
+        status = int(props["Status"])
+        lat = float(props["Latitude"])
+        lon = float(props["Longitude"])
+        last_poll_ms = props["LastPoll"]
 
         distance_km = _haversine_km(config.LOCATION_LAT, config.LOCATION_LON, lat, lon)
-        if distance_km > config.CSO_NEARBY_RADIUS_KM:
+        # not isfinite() (not just the simpler `>`) because NaN compares False to
+        # everything, including `>` - a NaN distance would otherwise silently PASS this
+        # filter instead of being excluded.
+        if not math.isfinite(distance_km) or distance_km > config.CSO_NEARBY_RADIUS_KM:
             continue
 
         last_poll = datetime.fromtimestamp(last_poll_ms / 1000, tz=timezone.utc)
         age_hours = (now - last_poll).total_seconds() / 3600
-        if age_hours > config.CSO_OUTFALL_FRESHNESS_HOURS:
+        # age_hours < 0 excludes a future/clock-skewed LastPoll, which would otherwise
+        # silently pass the `> freshness` check below as if it were fresh.
+        if age_hours < 0 or age_hours > config.CSO_OUTFALL_FRESHNESS_HOURS:
             continue
 
         nearby.append(
