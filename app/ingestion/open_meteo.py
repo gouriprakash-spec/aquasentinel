@@ -16,12 +16,11 @@ from zoneinfo import ZoneInfo
 
 import httpx
 
+from app.config import LOCATION_LAT as GAUGE_LAT
+from app.config import LOCATION_LON as GAUGE_LON
 from app.ingestion.nws import RainfallUnavailable
 
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
-# Penn's Landing, USGS gauge 01467200 - same reach as docs/landing-page/index.html's map.
-GAUGE_LAT = 39.946402
-GAUGE_LON = -75.139360
 EASTERN = ZoneInfo("America/New_York")
 
 

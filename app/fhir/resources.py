@@ -18,11 +18,11 @@ from __future__ import annotations
 
 import uuid
 
+from app.config import LOCATION_LAT, LOCATION_LON
+
 RISK_TIER_SYSTEM = "https://aquasentinel.example/fhir/CodeSystem/risk-tier"
 LOCATION_ID = "penns-landing"
 LOCATION_NAME = "Penn's Landing, Center City tidal Delaware"
-LOCATION_LAT = 39.946402
-LOCATION_LON = -75.139360
 
 PROXY_UNITS = {
     "water_temp_c": "°C",

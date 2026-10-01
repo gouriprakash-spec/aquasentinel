@@ -9,6 +9,13 @@ see docs/alert-rules-decisions.md, "Still open (to be derived, not decided)".
 UNSAFE_THRESHOLD_CFU_100ML = 235  # EPA single-sample max. The only tier boundary. No "Caution".
 GEOMEAN_THRESHOLD_CFU_100ML = 126  # EPA 30-day geometric-mean anchor. Context only, not an alert level.
 
+# --- Location (docs/product-brief.md) ---
+# Penn's Landing, USGS gauge 01467200's own site coordinate. Single shared source - until
+# Milestone 6, this existed as three separate Python copies (app/fhir/resources.py,
+# app/ingestion/open_meteo.py); both now import it from here instead.
+LOCATION_LAT = 39.946402
+LOCATION_LON = -75.139360
+
 # --- Alert gating (docs/alert-rules-decisions.md, decisions 2-5) ---
 FRESHNESS_LIMIT_HOURS = 2  # Gauge reading older than this -> "status unavailable".
 ALL_CLEAR_WINDOW_HOURS = 48  # Continuous hours of Safe required before an all-clear fires.
@@ -33,4 +40,14 @@ RAIN_FALLBACK_THRESHOLD_MM = 2.5
 # and the near-shore model most often disagreed, out-of-fold, on the 69-row near-shore set.
 LOW_CONFIDENCE_CUTOFF = 0.7466666666666666
 FORECAST_RAIN_THRESHOLD_MM_T = None  # TODO(decide): derive from our rainfall data (NWS heads-up).
-CSO_OUTFALL_IDS: list[str] = []  # TODO(decide): research PWD outfall locations + tidal excursion.
+
+# --- CSO overflow rule (Milestone 6) ---
+# Verified live 2026-10-01 against the real CSOcast feed - see
+# docs/superpowers/specs/2026-10-01-cso-overflow-rule-milestone6-design.md's Scope decisions
+# for why these values, not a published tidal-excursion figure (none was found).
+CSO_NEARBY_RADIUS_KM = 5.0  # of 53 Delaware-tagged outfalls, 35 fall within this radius
+CSO_OUTFALL_FRESHNESS_HOURS = 24  # per-outfall, not whole-feed - see the D_54 case in the spec
+CSO_TRIGGER_STATUSES = (3, 4)  # 3 = overflow in past 72h, 4 = currently overflowing
+# Deliberately a plain literal, not computed from LOW_CONFIDENCE_CUTOFF - just needs to stay
+# below it so a CSO-forced Unsafe always queues a Milestone 8 confirmatory sample.
+CSO_OVERRIDE_CONFIDENCE = 0.3
