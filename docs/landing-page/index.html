@@ -178,8 +178,7 @@
     <table>
       <thead>
         <tr>
-          <th>TIME <span class="u">gauge measured</span></th>
-          <th>CHECKED <span class="u">we polled</span></th>
+          <th>TIME</th>
           <th>RAIN TODAY <span class="u">mm</span></th>
           <th>RAIN 24H <span class="u">mm</span></th>
           <th>RAIN PRIOR 2 DAYS <span class="u">mm &middot; decides status</span></th>
@@ -426,7 +425,6 @@
       var rowbg = (i===0) ? 'background:#F3FAF7;' : '';
       html +=
         '<tr style="'+rowbg+'">' +
-        '<td class="mono">'+r.time+'</td>' +
         '<td class="mono">'+r.checked+'</td>' +
         '<td class="mono">'+r.rainToday+'</td>' +
         '<td class="mono">'+r.rain24+'</td>' +
