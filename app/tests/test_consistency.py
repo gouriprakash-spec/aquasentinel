@@ -48,7 +48,7 @@ def _fake_reading(risk_tier: str = "Unsafe") -> dict:
 
 
 def test_mcp_status_and_readings_agree_on_tier_and_timestamp(monkeypatch, tmp_path):
-    # Final-review finding (Important): this test's Unsafe reading makes /api/pull-reading
+    # Final-review finding (Important): this test's Unsafe reading makes the pull
     # gate an unsafe_onset and write a real FHIR Flag - without also isolating
     # fhir_store's DB_PATH (only db.DB_PATH was patched here), that write landed in the
     # real dev aquasentinel.db instead of this test's tmp_path.
@@ -59,8 +59,7 @@ def test_mcp_status_and_readings_agree_on_tier_and_timestamp(monkeypatch, tmp_pa
     fhir_store.init_db()
 
     client = TestClient(server.app)
-    pulled = client.post("/api/pull-reading")
-    assert pulled.status_code == 200
+    server._pull_and_publish()  # what the scheduler runs; the public POST route was removed
 
     # (a) what the dashboard banner renders from
     readings = db.get_recent_readings(limit=1)
@@ -106,8 +105,7 @@ def test_mcp_status_and_readings_agree_on_a_cso_escalated_reading(monkeypatch, t
     fhir_store.init_db()
 
     client = TestClient(server.app)
-    pulled = client.post("/api/pull-reading")
-    assert pulled.status_code == 200
+    server._pull_and_publish()  # what the scheduler runs; the public POST route was removed
 
     readings = db.get_recent_readings(limit=1)
     status_response = client.get("/api/status")

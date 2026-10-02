@@ -1,9 +1,11 @@
-"""FastAPI app: serves the dashboard and the live-reading API.
+"""FastAPI app: serves the dashboard and the read-only status API.
 
-Wires app/scoring/pull_reading.py (real USGS + NWS + model) into the dashboard that
-docs/landing-page/index.html renders. Per CLAUDE.md, the front end stays framework-free -
-this only serves the existing page and answers its fetches; the page itself is not
-rewritten as React or anything else.
+A scheduled job (app/scheduler.py, started in this module's lifespan) runs
+app/scoring/pull_reading.py (real USGS + NWS + model) at startup and on the hour and stores
+the result; the dashboard that docs/landing-page/index.html renders, /api/status and the MCP
+server only read what is stored. Per CLAUDE.md, the front end stays framework-free - this
+only serves the existing page and answers its fetches; the page itself is not rewritten as
+React or anything else.
 
 Run: ./venv/bin/uvicorn app.server:app --reload
 """
@@ -45,9 +47,8 @@ SCHEDULER_ENABLED = True
 def _pull_and_publish() -> dict:
     """Fetch a real reading, store it, gate it, and send any FHIR event.
 
-    The one shared path for both the dashboard's POST /api/pull-reading and the scheduled
-    pull, so the two can never drift apart. Raises UsgsDataUnavailable/RainfallUnavailable
-    when a source can't be read - callers decide how to surface that.
+    Called only by the scheduler. Raises UsgsDataUnavailable/RainfallUnavailable when a source
+    can't be read - the caller decides how to surface that.
     """
     reading = pull_reading()
     # save_reading keeps one row per gauge reading; gating and FHIR below still run on EVERY
@@ -107,27 +108,16 @@ def llms_txt() -> FileResponse:
     return FileResponse(LANDING_PAGE_DIR / "llms.txt", media_type="text/markdown")
 
 
-@app.post("/api/pull-reading")
-def api_pull_reading() -> dict:
-    """Fetch a real live reading, score it, persist it, gate it, and return the reading.
-
-    Fails closed: if USGS or NWS can't be reached or parsed, this returns 503 rather
-    than a fabricated reading. The alert-rules gating (milestone 3) runs after every real
-    pull - triggered here by the dashboard (on open, on click, or hourly while open), not
-    by a background scheduler (see plan.md's Open Questions for that known gap). Its
-    decision now also drives FHIR delivery to RPHSA's Subscription (milestone 4) when it
-    represents a real agency event - but that delivery is best-effort: a failure there
-    (see app/fhir/emit.py) never surfaces here or to the dashboard.
-    """
-    try:
-        return _pull_and_publish()
-    except (UsgsDataUnavailable, RainfallUnavailable) as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+# There is deliberately NO public route that triggers a live pull (POST /api/pull-reading was
+# removed 2026-10-02). Each call made about six live requests to USGS, NWS, Open-Meteo and
+# CSOcast and needed no login, so anyone could risk getting this server rate-limited by the
+# data sources. The scheduler (app/scheduler.py) is the only thing that fetches; every public
+# route below reads what is already stored.
 
 
 @app.get("/api/readings")
 def api_readings(limit: int = 9) -> list[dict]:
-    """Recent stored readings, newest first - lets the dashboard survive a page reload."""
+    """Recent stored readings, newest first - what the dashboard reads on load."""
     return db.get_recent_readings(limit=limit)
 
 

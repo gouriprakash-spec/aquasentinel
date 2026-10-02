@@ -78,7 +78,9 @@ Build order is top to bottom; see `plan.md` for the cut line.
 - **Real `pullReading()`.** Live proxies from USGS Penn's Landing gauge `01467200` (temp,
   specific conductance, DO, pH, turbidity) plus NOAA NCEI antecedent rainfall at `USW00013739`,
   scored by the model. The Safe/Unsafe tier is decided by deterministic code, not the model and
-  not an agent.
+  not an agent. Run by a scheduled job at startup and on the hour; the dashboard only reads the
+  stored readings (the public pull button and route were removed 2026-10-02 so no visitor can
+  trigger live requests to the data sources).
 - **Alert rules and gating (deterministic, fail-closed).** Per `docs/alert-rules-decisions.md`:
   newest gauge reading older than 2 hours → status "unavailable" (no message, never an
   all-clear); alert on change of state only; all-clear only after 48 continuous hours of Safe,

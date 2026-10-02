@@ -59,7 +59,12 @@ Build top to bottom. If behind on Oct 1, **cut from the bottom, never the middle
    further to `precip_mm` + `precip_prev_24h_mm` only (see milestone 1's model, now 8 features).
    Wired into the dashboard: `app/server.py` (FastAPI) serves `docs/landing-page/index.html` and
    `POST /api/pull-reading`/`GET /api/readings`; the page's `pullReading()` is real, not mocked,
-   and readings persist in SQLite (`app/db.py`) so they survive a reload. Verified in a real
+   and readings persist in SQLite (`app/db.py`) so they survive a reload. **Amended 2026-10-02:**
+   the public `POST /api/pull-reading` route, the page's "Pull latest reading" button and its
+   automatic on-open/hourly pulls were removed - anyone on the internet could trigger about six
+   live requests per call and risk a rate-limit block from USGS/NWS. A scheduled job
+   (`app/scheduler.py`) now runs `pull_reading()` at startup and on the hour; the page only reads
+   stored readings (`GET /api/readings`). Original (pre-removal) verification: in a real
    browser (Playwright): live pull renders correctly, and a real USGS 503 (rate-limited during
    testing) correctly failed closed - no fake reading shown, error surfaced in the UI. 31 passing
    tests across `app/tests/test_usgs_ingestion.py`, `test_nws_ingestion.py`, `test_pull_reading.py`,
@@ -220,12 +225,12 @@ Build top to bottom. If behind on Oct 1, **cut from the bottom, never the middle
 - Delivery is the 3–5 minute demo video plus the public repo and submission text, Oct 3–4.
 
 ## Open Questions
-- No server-side scheduled job exists yet. Milestone 3's gating logic is triggered only by
-  the dashboard (on open, on click, and hourly while the tab stays open) - if nobody has the
-  page open, no reading is pulled and no alert state updates, so a real Unsafe change or a
-  pending all-clear could go unnoticed. This is fine for development/demo but must be replaced
-  by a real scheduled job (plan.md's "Ingestion + scoring job (scheduled)") before milestone 4
-  sends anything to a real agency.
+- ~~No server-side scheduled job exists yet.~~ Resolved 2026-10-02: `app/scheduler.py` runs the
+  pull (and with it Milestone 3's gating and Milestone 4's FHIR delivery) at startup and at the
+  top of every hour, inside the app process. It is now the ONLY thing that fetches; the public
+  pull route and button were removed. Known consequences: a tier change is detected at most
+  hourly; and if the host sleeps idle instances (some free tiers do), the timer sleeps with it,
+  so the instance must stay running.
 - `app/alerts/gating.py`'s `evaluate_reading()` still computes a `public_event` field (season-gated
   separately from `agency_event`) alongside every decision, left over from before the no-public-
   alerting scope decision. It's inert - nothing reads it - but it's not deleted, since the M3

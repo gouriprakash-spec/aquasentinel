@@ -1,7 +1,7 @@
 """Deliver FHIR Observation + Flag resources to RPHSA's Subscription when a gating
 decision reports an agency event. Per the spec's Endpoints section (step 5): this never
 raises - a failed delivery, an unreachable Subscription, or even a malformed reading is
-logged, not surfaced, so it can never break /api/pull-reading's response to the dashboard.
+logged, not surfaced, so it can never break the scheduled pull that calls it.
 Logging loudly (not silently swallowing) is how this stays honest about failures while
 still protecting the caller - see the plan's Review Focus for why both properties matter
 at once.

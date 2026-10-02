@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app import db, server
@@ -56,14 +57,14 @@ def _client(monkeypatch, tmp_path):
     return TestClient(server.app)
 
 
-def test_pull_reading_endpoint_scores_persists_and_returns(monkeypatch, tmp_path):
+def test_pull_and_publish_scores_persists_and_returns(monkeypatch, tmp_path):
+    # The scheduler is now the only caller (the public POST /api/pull-reading was removed),
+    # so these tests exercise the shared function directly.
     monkeypatch.setattr(server, "pull_reading", lambda: _fake_reading("Unsafe"))
-    client = _client(monkeypatch, tmp_path)
+    _client(monkeypatch, tmp_path)
 
-    response = client.post("/api/pull-reading")
+    body = server._pull_and_publish()
 
-    assert response.status_code == 200
-    body = response.json()
     assert body["risk_tier"] == "Unsafe"
     assert "estimate_cfu_100ml" not in body
 
@@ -72,30 +73,29 @@ def test_pull_reading_endpoint_scores_persists_and_returns(monkeypatch, tmp_path
     assert stored[0]["risk_tier"] == "Unsafe"
 
 
-def test_pull_reading_endpoint_fails_closed_on_usgs_error(monkeypatch, tmp_path):
+def test_pull_and_publish_fails_closed_on_usgs_error(monkeypatch, tmp_path):
     def raise_unavailable():
         raise UsgsDataUnavailable("USGS is down")
 
     monkeypatch.setattr(server, "pull_reading", raise_unavailable)
-    client = _client(monkeypatch, tmp_path)
+    _client(monkeypatch, tmp_path)
 
-    response = client.post("/api/pull-reading")
+    with pytest.raises(UsgsDataUnavailable):
+        server._pull_and_publish()
 
-    assert response.status_code == 503
     # Nothing should have been persisted from a failed pull.
     assert db.get_recent_readings(db_path=tmp_path / "test.db") == []
 
 
-def test_pull_reading_endpoint_fails_closed_on_rainfall_error(monkeypatch, tmp_path):
+def test_scheduled_pull_fails_closed_on_rainfall_error(monkeypatch, tmp_path):
     def raise_unavailable():
         raise RainfallUnavailable("48h rainfall window incomplete")
 
     monkeypatch.setattr(server, "pull_reading", raise_unavailable)
-    client = _client(monkeypatch, tmp_path)
+    _client(monkeypatch, tmp_path)
 
-    response = client.post("/api/pull-reading")
+    server._scheduled_pull()  # logged and skipped, never raises
 
-    assert response.status_code == 503
     # Nothing should have been persisted from a failed pull.
     assert db.get_recent_readings(db_path=tmp_path / "test.db") == []
 
@@ -141,14 +141,14 @@ def test_index_serves_the_dashboard_html(monkeypatch, tmp_path):
     assert "AquaSentinel" in response.text
 
 
-def test_pull_reading_endpoint_succeeds_even_if_fhir_delivery_fails(monkeypatch, tmp_path):
+def test_pull_and_publish_succeeds_even_if_fhir_delivery_fails(monkeypatch, tmp_path):
     # A fresh reading time, not the shared fixture's fixed past timestamp - gating's
     # freshness check would otherwise make this reading "unavailable" (agency_event=None),
     # so emit_event would return before ever attempting delivery, proving nothing.
     fresh_reading = _fake_reading("Unsafe")
     fresh_reading["time"] = datetime.now(timezone.utc).isoformat()
     monkeypatch.setattr(server, "pull_reading", lambda: fresh_reading)
-    client = _client(monkeypatch, tmp_path)
+    _client(monkeypatch, tmp_path)
 
     # A real active Subscription pointing at an address that will genuinely fail to
     # resolve - this is a full end-to-end resilience check, not a mocked one.
@@ -160,10 +160,9 @@ def test_pull_reading_endpoint_succeeds_even_if_fhir_delivery_fails(monkeypatch,
         "sub-1", "active", "2026-06-01T00:00:00+00:00", db_path=tmp_path / "test.db"
     )
 
-    response = client.post("/api/pull-reading")
+    body = server._pull_and_publish()  # must not raise despite the failed delivery
 
-    assert response.status_code == 200
-    assert response.json()["risk_tier"] == "Unsafe"
+    assert body["risk_tier"] == "Unsafe"
     # Final-review finding (Important): confirms emit_event actually reached the delivery
     # attempt (not a no-op from a stale/no-event gating decision) - the Flag was recorded
     # locally even though delivery to the unreachable endpoint failed.
@@ -179,7 +178,7 @@ def test_api_status_returns_latest_reading_contract(monkeypatch, tmp_path):
     fresh_reading["time"] = datetime.now(timezone.utc).isoformat()
     monkeypatch.setattr(server, "pull_reading", lambda: fresh_reading)
     client = _client(monkeypatch, tmp_path)
-    client.post("/api/pull-reading")
+    server._pull_and_publish()
 
     response = client.get("/api/status")
 
@@ -216,7 +215,7 @@ def test_api_status_fails_closed_on_a_stale_reading(monkeypatch, tmp_path):
     stale_reading["time"] = (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat()
     monkeypatch.setattr(server, "pull_reading", lambda: stale_reading)
     client = _client(monkeypatch, tmp_path)
-    client.post("/api/pull-reading")
+    server._pull_and_publish()
 
     response = client.get("/api/status")
 
@@ -241,7 +240,7 @@ def test_llms_txt_is_served_with_honesty_language():
 def test_index_page_contains_substituted_json_ld(monkeypatch, tmp_path):
     monkeypatch.setattr(server, "pull_reading", lambda: _fake_reading("Safe"))
     client = _client(monkeypatch, tmp_path)
-    client.post("/api/pull-reading")
+    server._pull_and_publish()
 
     response = client.get("/")
 
@@ -300,12 +299,38 @@ def test_preexisting_routes_still_work_after_the_mcp_mount(monkeypatch, tmp_path
     """Review Focus: a route registered after app.mount("/", ...) would be silently
     shadowed (404, no exception) - this pins every pre-existing route as a regression
     guard against that exact failure mode being reintroduced later."""
-    monkeypatch.setattr(server, "pull_reading", lambda: _fake_reading("Safe"))
     client = _client(monkeypatch, tmp_path)
 
     assert client.get("/").status_code == 200
     assert client.get("/logo.png").status_code == 200
     assert client.get("/llms.txt").status_code == 200
     assert client.get("/api/status").status_code == 200
-    assert client.post("/api/pull-reading").status_code == 200
     assert client.get("/api/readings").status_code == 200
+
+
+def test_there_is_no_public_way_to_trigger_a_live_pull(monkeypatch, tmp_path):
+    """The POST /api/pull-reading route was removed (2026-10-02): anyone on the internet could
+    trigger about six live requests to USGS, NWS, Open-Meteo and CSOcast per call, risking a
+    rate-limit block for everyone. The scheduler is now the only thing that fetches."""
+    def must_not_be_called():
+        raise AssertionError("a public request triggered a live pull")
+
+    monkeypatch.setattr(server, "pull_reading", must_not_be_called)
+    client = _client(monkeypatch, tmp_path)
+
+    for method in ("post", "get", "put"):
+        response = getattr(client, method)("/api/pull-reading")
+        assert response.status_code in (404, 405), (method, response.status_code)
+
+    assert db.get_recent_readings(db_path=tmp_path / "test.db") == []
+
+
+def test_dashboard_page_has_no_pull_button_or_pull_call(monkeypatch, tmp_path):
+    client = _client(monkeypatch, tmp_path)
+
+    page = client.get("/").text
+
+    assert "pullBtn" not in page
+    assert "Pull latest reading" not in page
+    assert "pullReading" not in page
+    assert "/api/pull-reading" not in page

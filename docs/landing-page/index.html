@@ -8,9 +8,12 @@
   AquaSentinel landing page — served by app/server.py (FastAPI), plain HTML + CSS +
   vanilla JS, no build step. Framework-free on purpose per CLAUDE.md.
 
-  pullReading() is REAL (as of milestone 2, 2026-09-25): it POSTs to /api/pull-reading,
-  which runs app/scoring/pull_reading.py - live USGS 01467200 + NWS KPHL rainfall, scored
-  by the trained model, with the Safe/Unsafe tier decided by deterministic code.
+  The readings are REAL: a scheduled job on the server (app/scheduler.py) runs
+  app/scoring/pull_reading.py at startup and on the hour - live USGS 01467200 + NWS KPHL
+  rainfall, scored by the trained model, with the Safe/Unsafe tier decided by deterministic
+  code - and stores each result. This page only READS what is stored (GET /api/readings). It
+  has no pull button and calls no pull endpoint, by design (2026-10-02): a public button
+  that triggered live requests to the data sources could get the server rate-limited.
 
   No public alerting/subscribe feature exists here by design (scope decision, 2026-09-26):
   see docs/product-brief.md's "No direct-to-public alerting, by design." This page is
@@ -163,11 +166,7 @@
         stations, shown for context.</div>
     </div>
     <div style="display:flex;align-items:center;gap:14px;flex:none;">
-      <span class="pill" id="pullPill">LIVE READING</span>
-      <button class="btn" id="pullBtn" onclick="pullReading()">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M20 12A8 8 0 1 1 12 4" stroke="#fff" stroke-width="1.9" stroke-linecap="round"/><path d="M12 4L16 4L16 8" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 8V12L15 14" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        Pull latest reading
-      </button>
+      <span class="pill">UPDATED HOURLY</span>
     </div>
   </section>
 
@@ -280,9 +279,9 @@
 </script>
 <script>
   // ---- state ----
-  // Populated from GET /api/readings on load - no fake rows on first paint. Real pulls
-  // come from POST /api/pull-reading, which runs app/scoring/pull_reading.py (live USGS
-  // + NWS + the trained model) via app/server.py. See BUILD-SPEC.md.
+  // Populated from GET /api/readings (stored readings) - no fake rows on first paint. The
+  // server's scheduled job writes them (live USGS + NWS + the trained model); this page
+  // never triggers a pull itself. See BUILD-SPEC.md.
   var rows = [];
 
   function round1(x){ return Math.round(x*10)/10; }
@@ -307,9 +306,10 @@
     return ("0"+d.getHours()).slice(-2) + ":" + ("0"+d.getMinutes()).slice(-2);
   }
 
-  // Maps a reading into what render() draws. Accepts either shape: the live API's
-  // contract from POST /api/pull-reading (nested evidence.proxies/rainfall_mm), or the
-  // flat stored-row shape from GET /api/readings (app/db.py's columns).
+  // Maps a reading into what render() draws. Accepts either shape: the nested
+  // evidence.proxies/rainfall_mm contract that pull_reading() produces, or the flat
+  // stored-row shape from GET /api/readings (app/db.py's columns). The page now only ever
+  // receives the stored-row shape; the nested branch is kept (unused) so both stay readable.
   function toDisplayRow(reading){
     var isStored = 'reading_time' in reading;
     var proxies = isStored ? reading : reading.evidence.proxies;
@@ -371,35 +371,6 @@
       .catch(function(){ /* fresh DB or offline - start empty, never fabricate rows */ });
   }
 
-  function pullReading(){
-    var btn = document.getElementById('pullBtn');
-    var pill = document.getElementById('pullPill');
-    btn.disabled = true;
-    btn.style.opacity = 0.6;
-    pill.textContent = 'PULLING LIVE DATA…';
-
-    fetch('/api/pull-reading', { method: 'POST' })
-      .then(function(r){
-        if (!r.ok){
-          return r.json().then(function(err){ throw new Error(err.detail || 'Pull failed'); });
-        }
-        return r.json();
-      })
-      .then(function(reading){
-        rows = [toDisplayRow(reading)].concat(rows).slice(0, 9);
-        pill.textContent = 'LIVE READING';
-        render();
-      })
-      .catch(function(err){
-        pill.textContent = 'PULL FAILED — SEE CONSOLE';
-        console.error('pullReading failed:', err);
-      })
-      .finally(function(){
-        btn.disabled = false;
-        btn.style.opacity = 1;
-      });
-  }
-
   // ---- render ----
   function statusStyle(unsafe){
     return unsafe
@@ -413,7 +384,7 @@
     if (rows.length === 0){
       b.style.background = '#F7F9F9';
       b.style.border = '1px solid #E4E9EA';
-      b.innerHTML = '<div style="color:var(--muted);">No readings yet &mdash; click &ldquo;Pull latest reading&rdquo; to fetch a live estimate.</div>';
+      b.innerHTML = '<div style="color:var(--muted);">No readings yet &mdash; the first reading appears shortly after the server starts, then every hour.</div>';
       document.getElementById('tbody').innerHTML = '';
       return;
     }
@@ -475,10 +446,10 @@
   }
 
   loadRecentReadings();
-  pullReading();  // also fetch a fresh live reading on open, not just stored history
-  // Milestone 3: no background scheduler exists yet (see plan.md Open Questions) - this
-  // hourly refresh only runs while this tab stays open, it is not a server-side job.
-  setInterval(pullReading, 60 * 60 * 1000);
+  // The server pulls on the hour; re-reading what it stored lets a tab that stays open pick up
+  // the new reading within minutes. This is a cheap read of stored rows - it fetches nothing
+  // from USGS or any other outside service.
+  setInterval(loadRecentReadings, 5 * 60 * 1000);
 </script>
 </body>
 </html>

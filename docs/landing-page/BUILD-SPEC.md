@@ -14,8 +14,9 @@ in the JS. This document says what to build for real.
 A single-reach monitoring page for the Center City tidal Delaware — pull-based, public, the
 same for anyone who visits (no alerting, no personalization; see `docs/product-brief.md`'s
 "No direct-to-public alerting, by design"). Sections top to bottom: hero (logo + statement +
-a real Leaflet map), a "Live readings" toolbar with a **Pull latest reading** button, a
-latest-status banner, and a readings table.
+a real Leaflet map), a "Live readings" toolbar (originally with a **Pull latest reading**
+button; removed 2026-10-02 - the server's scheduled job pulls instead, so no visitor can
+trigger live requests to the data sources), a latest-status banner, and a readings table.
 
 ## Data lineage (get this right — it is the credibility of the whole thing)
 - **Proxies come from ONE USGS gauge: Penn's Landing, site `01467200`.** It streams
