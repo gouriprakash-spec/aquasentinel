@@ -13,6 +13,9 @@ this plan's Task 6 for where the actual mount happens (and why it must be last).
 
 from __future__ import annotations
 
+import logging
+import os
+
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
@@ -21,24 +24,49 @@ from app.config import LOCATION_LAT, LOCATION_LON
 from app.scoring.pull_reading import LOCATION_ID, LOCATION_NAME
 from app.status import build_status_contract, current_status
 
+logger = logging.getLogger(__name__)
+
 # Same USGS gauge id already embedded in pull_reading.SOURCE_URL - not a second source of
 # truth, just not currently its own named constant there.
 GAUGE_ID = "01467200"
 
-# KNOWN GAP (deliberate, tracked in this plan's Review Focus, not an oversight): this
-# allowlist only covers the test client and local dev. No real deploy host is chosen yet
-# (see plan.md's Open Questions / the deployment_target decision) - once one is, its real
-# hostname must be added to both lists below, and a line added to plan.md's Open Questions
-# noting it's done. Until then, every real MCP request against a deployed host will be
-# rejected with "Invalid Host header", which will look like a bug rather than this gap.
+ALLOWED_HOSTS_ENV_VAR = "AQUASENTINEL_ALLOWED_HOSTS"
+_LOCAL_HOSTS = ["testserver", "localhost", "localhost:8000", "127.0.0.1:8000"]
+_LOCAL_ORIGINS = ["http://testserver", "http://localhost:8000", "http://127.0.0.1:8000"]
+
+
+def build_transport_security(extra_hosts: str | None) -> TransportSecuritySettings:
+    """The MCP SDK rejects any request whose Host header is not allowlisted (DNS-rebinding
+    protection), answering "Invalid Host header". The local defaults cover dev and tests; a
+    real deploy adds its public hostname through AQUASENTINEL_ALLOWED_HOSTS (comma-separated,
+    bare hostnames such as "aquasentinel.onrender.com", no scheme or path). The protection is
+    extended, never turned off.
+
+    A malformed entry (for example a pasted full URL) is skipped with a logged warning rather
+    than accepted as a strange host string or allowed to crash the server at import time.
+    """
+    hosts = list(_LOCAL_HOSTS)
+    origins = list(_LOCAL_ORIGINS)
+    for raw_entry in (extra_hosts or "").split(","):
+        entry = raw_entry.strip()
+        if not entry:
+            continue
+        if "/" in entry or any(character.isspace() for character in entry):
+            logger.warning(
+                "Ignoring %s entry %r: expected a bare hostname like "
+                "'aquasentinel.onrender.com', no scheme or path.",
+                ALLOWED_HOSTS_ENV_VAR, entry,
+            )
+            continue
+        hosts.append(entry)
+        # A deployed host is served over https, so the matching Origin is the https form.
+        origins.append(f"https://{entry}")
+    return TransportSecuritySettings(allowed_hosts=hosts, allowed_origins=origins)
+
+
 mcp = FastMCP(
     "aquasentinel_mcp",
-    transport_security=TransportSecuritySettings(
-        allowed_hosts=["testserver", "localhost", "localhost:8000", "127.0.0.1:8000"],
-        allowed_origins=[
-            "http://testserver", "http://localhost:8000", "http://127.0.0.1:8000",
-        ],
-    ),
+    transport_security=build_transport_security(os.environ.get(ALLOWED_HOSTS_ENV_VAR)),
 )
 
 
