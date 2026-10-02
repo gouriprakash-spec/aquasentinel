@@ -32,6 +32,7 @@ def _reading(risk_tier: str = "Unsafe") -> dict:
 def _cso_reading(risk_tier: str = "Unsafe") -> dict:
     reading = _reading(risk_tier)
     reading["evidence"]["decision_basis"] = "cso_overflow_rule"
+    reading["evidence"]["cso"] = "Overflow"  # what pull_reading() sets whenever CSO decided
     reading["evidence"]["cso_status"] = {
         "outfall_name": "D_25", "status": 3, "distance_km": 4.33,
         "last_poll": "2026-10-01T10:00:00+00:00",
@@ -83,13 +84,14 @@ def test_build_bundle_contains_one_entry_per_resource():
 
     assert bundle["resourceType"] == "Bundle"
     assert bundle["type"] == "collection"
-    # 1 Location + 1 rainfall Observation + 5 proxy Observations + 1 risk-tier Observation
-    # + 1 Flag = 9.
-    assert len(bundle["entry"]) == 9
+    # 1 Location + 1 rainfall Observation + 1 CSO Observation (always present, see
+    # test_bundle_always_carries_the_cso_value) + 5 proxy Observations + 1 risk-tier
+    # Observation + 1 Flag = 10.
+    assert len(bundle["entry"]) == 10
 
     resource_types = [entry["resource"]["resourceType"] for entry in bundle["entry"]]
     assert resource_types.count("Location") == 1
-    assert resource_types.count("Observation") == 7
+    assert resource_types.count("Observation") == 8
     assert resource_types.count("Flag") == 1
 
 
@@ -97,9 +99,14 @@ def test_risk_observation_derived_from_references_rainfall_and_proxy_full_urls()
     flag = resources.build_flag("flag-1", "Unsafe", "active", "2026-06-01T12:00:00+00:00", None)
     bundle = resources.build_bundle(_reading(), flag)
 
+    # The CSO observation is reported in every Bundle but is not an input the tier was derived
+    # from when rainfall decided it - so it is excluded here (see
+    # test_risk_observation_is_not_derived_from_cso_when_rainfall_decided_the_tier).
+    cso_urls = {e["fullUrl"] for e in _cso_entries(bundle)}
     input_entries = [
         e for e in bundle["entry"]
         if e["resource"]["resourceType"] == "Observation" and "method" not in e["resource"]
+        and e["fullUrl"] not in cso_urls
     ]
     derived_from_refs = [d["reference"] for d in _risk_entry(bundle)["resource"]["derivedFrom"]]
 
@@ -178,8 +185,66 @@ def test_build_cso_observation_shape():
     assert resource["resourceType"] == "Observation"
     assert resource["subject"] == {"reference": "Location/penns-landing"}
     assert resource["effectiveDateTime"] == "2026-06-01T12:00:00+00:00"
-    assert "72 hours" in resource["valueCodeableConcept"]["text"]
+    # The value is the CSO field's own three-state value; the specific outfall status
+    # ("overflow in the past 72 hours") moves to the note next to the outfall details.
+    assert resource["valueCodeableConcept"]["text"] == "Overflow"
     assert "D_25" in resource["note"][0]["text"]
+    assert "72 hours" in resource["note"][0]["text"]
+
+
+def _cso_entries(bundle: dict) -> list[dict]:
+    return [
+        e for e in bundle["entry"]
+        if e["resource"]["resourceType"] == "Observation"
+        and e["resource"]["code"]["text"] == "Combined sewer outfall overflow status"
+    ]
+
+
+@pytest.mark.parametrize("state", ["Overflow", "No overflow", "Reading unavailable"])
+def test_bundle_always_carries_the_cso_value(state):
+    """Whatever decided the tier, RPHSA receives the CSO field's value (Gouri, 2026-10-02)."""
+    reading = _reading()
+    reading["evidence"]["cso"] = state
+    flag = resources.build_flag("flag-1", "Unsafe", "active", "2026-06-01T12:00:00+00:00", None)
+
+    bundle = resources.build_bundle(reading, flag)
+
+    entries = _cso_entries(bundle)
+    assert len(entries) == 1  # exactly one - never two conflicting CSO observations
+    assert entries[0]["resource"]["valueCodeableConcept"]["text"] == state
+    assert entries[0]["resource"]["effectiveDateTime"] == "2026-06-01T12:00:00+00:00"
+
+
+def test_a_reading_with_no_cso_value_is_sent_as_unavailable_never_no_overflow():
+    flag = resources.build_flag("flag-1", "Unsafe", "active", "2026-06-01T12:00:00+00:00", None)
+
+    bundle = resources.build_bundle(_reading(), flag)  # evidence has no "cso" key
+
+    assert _cso_entries(bundle)[0]["resource"]["valueCodeableConcept"]["text"] == (
+        "Reading unavailable"
+    )
+
+
+def test_cso_observation_has_no_outfall_note_when_no_outfall_triggered():
+    reading = _reading()
+    reading["evidence"]["cso"] = "No overflow"
+    flag = resources.build_flag("flag-1", "Unsafe", "active", "2026-06-01T12:00:00+00:00", None)
+
+    resource = _cso_entries(resources.build_bundle(reading, flag))[0]["resource"]
+
+    assert "note" not in resource
+
+
+def test_risk_observation_is_not_derived_from_cso_when_rainfall_decided_the_tier():
+    """The CSO value is reported, but the tier was not derived from it - derivedFrom keeps
+    its meaning (what actually decided the tier)."""
+    reading = _reading()
+    reading["evidence"]["cso"] = "No overflow"
+    flag = resources.build_flag("flag-1", "Unsafe", "active", "2026-06-01T12:00:00+00:00", None)
+    bundle = resources.build_bundle(reading, flag)
+
+    derived_from_refs = [d["reference"] for d in _risk_entry(bundle)["resource"]["derivedFrom"]]
+    assert _cso_entries(bundle)[0]["fullUrl"] not in derived_from_refs
 
 
 def test_bundle_includes_cso_observation_when_it_decided_the_tier():
@@ -190,17 +255,6 @@ def test_bundle_includes_cso_observation_when_it_decided_the_tier():
     assert len(bundle["entry"]) == 10
     resource_types = [entry["resource"]["resourceType"] for entry in bundle["entry"]]
     assert resource_types.count("Observation") == 8
-
-
-def test_bundle_omits_cso_observation_when_rainfall_rule_decided():
-    """Review Focus #4: the common case (no CSO trigger) must produce byte-for-byte the same
-    Bundle shape as before this feature existed."""
-    flag = resources.build_flag("flag-1", "Unsafe", "active", "2026-06-01T12:00:00+00:00", None)
-    bundle = resources.build_bundle(_reading(), flag)
-
-    assert len(bundle["entry"]) == 9
-    resource_types = [entry["resource"]["resourceType"] for entry in bundle["entry"]]
-    assert resource_types.count("Observation") == 7
 
 
 def test_risk_observation_method_describes_cso_override_when_it_decided_the_tier():

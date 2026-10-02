@@ -123,13 +123,16 @@ CSO_STATUS_DISPLAY = {
 
 
 def build_cso_observation(reading: dict) -> dict:
-    """The outfall that triggered a CSO escalation. Only built when decision_basis is
-    "cso_overflow_rule" (see build_bundle) - required there, not optional: a KeyError means
-    the reading claims CSO decided the tier but can't show which outfall, and the caller must
-    not silently drop that from the Bundle.
+    """The CSO field's value ("Overflow" / "No overflow" / "Reading unavailable") - present in
+    every Bundle, whatever decided the tier, so RPHSA always sees what the CSO check found.
+
+    A reading with no stored value is sent as "Reading unavailable", never "No overflow" (the
+    same honest default as app.status). When a CSO overflow decided the tier, the triggering
+    outfall's details go in a note - required there, not optional: a KeyError means the
+    reading claims CSO decided the tier but can't show which outfall, and the caller must not
+    silently drop that from the Bundle.
     """
-    cso = reading["evidence"]["cso_status"]
-    status_text = CSO_STATUS_DISPLAY.get(cso["status"], f"Status {cso['status']}")
+    evidence = reading["evidence"]
     resource = {
         "resourceType": "Observation",
         "id": str(uuid.uuid4()),
@@ -137,12 +140,15 @@ def build_cso_observation(reading: dict) -> dict:
         "code": {"text": "Combined sewer outfall overflow status"},
         "subject": {"reference": f"Location/{LOCATION_ID}"},
         "effectiveDateTime": reading["time"],
-        "valueCodeableConcept": {"text": status_text},
-        "note": [{
-            "text": f"Outfall {cso['outfall_name']}, {cso['distance_km']} km from Penn's "
-                    f"Landing. Last reported {cso['last_poll']}."
-        }],
+        "valueCodeableConcept": {"text": evidence.get("cso") or "Reading unavailable"},
     }
+    if evidence.get("decision_basis") == "cso_overflow_rule":
+        cso = evidence["cso_status"]
+        status_text = CSO_STATUS_DISPLAY.get(cso["status"], f"Status {cso['status']}")
+        resource["note"] = [{
+            "text": f"{status_text}. Outfall {cso['outfall_name']}, {cso['distance_km']} km "
+                    f"from Penn's Landing. Last reported {cso['last_poll']}."
+        }]
     return {"fullUrl": f"urn:uuid:{uuid.uuid4()}", "resource": resource}
 
 
@@ -215,13 +221,14 @@ def build_bundle(reading: dict, flag: dict) -> dict:
     proxy_entries = build_proxy_observations(reading)
     rainfall_entry = build_rainfall_observation(reading)
     decision_basis = reading["evidence"].get("decision_basis", "rainfall_rule")
-    cso_entry = build_cso_observation(reading) if decision_basis == "cso_overflow_rule" else None
-    risk_entry = build_risk_observation(reading, proxy_entries, rainfall_entry, cso_entry)
+    cso_entry = build_cso_observation(reading)
+    # The tier is only "derived from" the CSO observation when CSO actually decided it; in
+    # every other case the CSO value is reported alongside, but is not what the tier came from.
+    cso_decided_entry = cso_entry if decision_basis == "cso_overflow_rule" else None
+    risk_entry = build_risk_observation(reading, proxy_entries, rainfall_entry, cso_decided_entry)
     flag_entry = {"fullUrl": f"urn:uuid:{uuid.uuid4()}", "resource": flag}
 
-    entries = [location_entry, rainfall_entry]
-    if cso_entry is not None:
-        entries.append(cso_entry)
+    entries = [location_entry, rainfall_entry, cso_entry]
     entries += proxy_entries + [risk_entry, flag_entry]
 
     return {
