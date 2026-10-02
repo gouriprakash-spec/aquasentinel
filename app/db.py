@@ -95,54 +95,85 @@ def _migrate_cso_columns(conn: sqlite3.Connection) -> None:
             conn.execute(f"ALTER TABLE readings ADD COLUMN {column_name} {column_type}")
 
 
-def insert_reading(reading: dict, db_path: Path | None = None) -> int:
-    """Store a reading dict shaped like app.scoring.pull_reading.pull_reading()'s output."""
+def _reading_columns(reading: dict) -> dict:
+    """Column name -> value for one reading, shared by the INSERT and the UPDATE below so the
+    two can never list different columns."""
     evidence = reading["evidence"]
     proxies = evidence["proxies"]
     rainfall = evidence["rainfall_mm"]
     cso_status = evidence.get("cso_status") or {}
+    return {
+        "location": reading["location"],
+        "reading_time": reading["time"],
+        "risk_tier": reading["risk_tier"],
+        "confidence": reading["confidence"],
+        "water_temp_c": proxies.get("water_temp_c"),
+        "sp_conductance_uscm": proxies.get("sp_conductance_uscm"),
+        "dissolved_oxygen_mgl": proxies.get("dissolved_oxygen_mgl"),
+        "ph": proxies.get("ph"),
+        "turbidity_fnu": proxies.get("turbidity_fnu"),
+        "precip_mm": rainfall.get("precip_mm"),
+        "precip_prev_24h_mm": rainfall.get("precip_prev_24h_mm"),
+        "precip_prev_48h_mm": rainfall.get("precip_prev_48h_mm"),
+        "rainfall_source": evidence.get("rainfall_source"),
+        "decision_basis": evidence.get("decision_basis"),
+        "rule_threshold_mm": evidence.get("rule_threshold_mm"),
+        "model_probability_unsafe": evidence.get("model_probability_unsafe"),
+        "cso_outfall_name": cso_status.get("outfall_name"),
+        "cso_outfall_status": cso_status.get("status"),
+        "cso_distance_km": cso_status.get("distance_km"),
+        "cso_last_poll": cso_status.get("last_poll"),
+        "cso_state": evidence.get("cso"),
+        "threshold_cfu_100ml": reading["threshold_cfu_100ml"],
+        "model_version": reading["model_version"],
+        "regime": reading["regime"],
+        "retrieved_at": reading["retrieved_at"],
+    }
+
+
+def insert_reading(reading: dict, db_path: Path | None = None) -> int:
+    """Store a reading dict shaped like app.scoring.pull_reading.pull_reading()'s output."""
+    columns = _reading_columns(reading)
+    # The column names come from the literal dict above, never from user input, so building
+    # the SQL text from them is safe; the values still go through ? placeholders.
+    names = ", ".join(columns)
+    placeholders = ", ".join("?" for _ in columns)
     with _connect(db_path) as conn:
         cursor = conn.execute(
-            """
-            INSERT INTO readings (
-                location, reading_time, risk_tier, confidence,
-                water_temp_c, sp_conductance_uscm, dissolved_oxygen_mgl, ph, turbidity_fnu,
-                precip_mm, precip_prev_24h_mm,
-                precip_prev_48h_mm, rainfall_source, decision_basis, rule_threshold_mm,
-                model_probability_unsafe,
-                cso_outfall_name, cso_outfall_status, cso_distance_km, cso_last_poll, cso_state,
-                threshold_cfu_100ml, model_version, regime, retrieved_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                reading["location"],
-                reading["time"],
-                reading["risk_tier"],
-                reading["confidence"],
-                proxies.get("water_temp_c"),
-                proxies.get("sp_conductance_uscm"),
-                proxies.get("dissolved_oxygen_mgl"),
-                proxies.get("ph"),
-                proxies.get("turbidity_fnu"),
-                rainfall.get("precip_mm"),
-                rainfall.get("precip_prev_24h_mm"),
-                rainfall.get("precip_prev_48h_mm"),
-                evidence.get("rainfall_source"),
-                evidence.get("decision_basis"),
-                evidence.get("rule_threshold_mm"),
-                evidence.get("model_probability_unsafe"),
-                cso_status.get("outfall_name"),
-                cso_status.get("status"),
-                cso_status.get("distance_km"),
-                cso_status.get("last_poll"),
-                evidence.get("cso"),
-                reading["threshold_cfu_100ml"],
-                reading["model_version"],
-                reading["regime"],
-                reading["retrieved_at"],
-            ),
+            f"INSERT INTO readings ({names}) VALUES ({placeholders})",
+            tuple(columns.values()),
         )
         return cursor.lastrowid
+
+
+def save_reading(reading: dict, db_path: Path | None = None) -> int:
+    """Store a reading, keeping ONE row per gauge reading (location + reading_time).
+
+    reading_time is when the USGS gauge measured, and the gauge only updates about every 15
+    minutes - so pulling again inside that window must not add an identical-looking row. A
+    repeat pull UPDATES the stored row instead (rainfall and CSO can change faster than the
+    gauge, so the newer values win). Returns the row's id.
+    """
+    columns = _reading_columns(reading)
+    with _connect(db_path) as conn:
+        existing = conn.execute(
+            "SELECT MAX(id) FROM readings WHERE location = ? AND reading_time = ?",
+            (columns["location"], columns["reading_time"]),
+        ).fetchone()[0]
+        if existing is None:
+            names = ", ".join(columns)
+            placeholders = ", ".join("?" for _ in columns)
+            cursor = conn.execute(
+                f"INSERT INTO readings ({names}) VALUES ({placeholders})",
+                tuple(columns.values()),
+            )
+            return cursor.lastrowid
+        assignments = ", ".join(f"{name} = ?" for name in columns)
+        conn.execute(
+            f"UPDATE readings SET {assignments} WHERE id = ?",
+            (*columns.values(), existing),
+        )
+        return existing
 
 
 def get_recent_readings(limit: int = 9, db_path: Path | None = None) -> list[dict]:

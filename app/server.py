@@ -50,7 +50,9 @@ def _pull_and_publish() -> dict:
     when a source can't be read - callers decide how to surface that.
     """
     reading = pull_reading()
-    db.insert_reading(reading)
+    # save_reading keeps one row per gauge reading; gating and FHIR below still run on EVERY
+    # pull, so a tier change inside one gauge window is never swallowed by the update.
+    db.save_reading(reading)
     decision = evaluate_reading(reading)
     fhir_emit.emit_event(reading, decision)
     return reading
