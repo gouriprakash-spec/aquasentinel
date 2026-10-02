@@ -11,6 +11,28 @@ from __future__ import annotations
 from app import config
 from app.ingestion.csocast import OutfallReading
 
+# The three values of the dashboard/API "CSO" field. Exact wording decided with Gouri.
+CSO_OVERFLOW = "Overflow"
+CSO_NO_OVERFLOW = "No overflow"
+CSO_UNAVAILABLE = "Reading unavailable"
+
+
+def classify_cso_state(nearby_outfalls: list[OutfallReading] | None) -> str:
+    """The value of the CSO field, decided in code (architecture rule: code decides).
+
+    `nearby_outfalls` is the radius/freshness-filtered list, or None when the CSOcast feed
+    could not be fetched at all. "No overflow" is claimed only when a fresh nearby outfall
+    positively reports it - an unreachable feed, an empty list (no fresh nearby outfall), or
+    only "no data" outfalls all say "Reading unavailable", never a made-up all-clear.
+    """
+    if nearby_outfalls is None:
+        return CSO_UNAVAILABLE
+    if any(outfall.status in config.CSO_TRIGGER_STATUSES for outfall in nearby_outfalls):
+        return CSO_OVERFLOW
+    if any(outfall.status == config.CSO_NO_OVERFLOW_STATUS for outfall in nearby_outfalls):
+        return CSO_NO_OVERFLOW
+    return CSO_UNAVAILABLE
+
 
 def apply_cso_escalation(
     risk_tier: str, confidence: float, nearby_outfalls: list[OutfallReading]

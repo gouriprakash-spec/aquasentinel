@@ -45,6 +45,9 @@ def build_status_contract(row: dict) -> dict:
         "rainfall_source": row["rainfall_source"],
         "model_probability_unsafe": row["model_probability_unsafe"],
         "cso_status": cso_status,
+        # "Overflow" / "No overflow" / "Reading unavailable". A row with no stored value
+        # (stored before this field existed) reads as unavailable - never as "No overflow".
+        "cso": row.get("cso_state") or "Reading unavailable",
         "proxies": {
             "water_temp_c": row["water_temp_c"],
             "sp_conductance_uscm": row["sp_conductance_uscm"],

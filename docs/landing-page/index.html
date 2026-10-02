@@ -189,6 +189,7 @@
           <th>DISS. O&#8322; <span class="u">mg/L</span></th>
           <th>pH</th>
           <th>RULE/MODEL AGREEMENT</th>
+          <th>CSO</th>
           <th>STATUS</th>
         </tr>
       </thead>
@@ -329,8 +330,14 @@
     var csoDistanceKm = isStored
       ? reading.cso_distance_km
       : (liveCsoStatus ? liveCsoStatus.distance_km : null);
+    // The CSO field: "Overflow" / "No overflow" / "Reading unavailable". Anything else
+    // (including a missing value on a row stored before this field existed) shows as
+    // unavailable - never a made-up "No overflow".
+    var cso = isStored ? reading.cso_state : reading.evidence.cso;
+    if (cso !== 'Overflow' && cso !== 'No overflow') cso = 'Reading unavailable';
     return {
       time: formatTime(time),
+      cso: cso,
       rainToday: round1(rainToday),
       rain24: round1(rain24),
       rain48: fmt1(rain48),
@@ -453,6 +460,7 @@
         '<td class="mono">'+r.dox+'</td>' +
         '<td class="mono">'+r.ph+'</td>' +
         '<td class="mono est">'+r.confidencePct+'%</td>' +
+        '<td class="mono"'+(r.cso === 'Overflow' ? ' style="color:'+statusStyle(true).color+';font-weight:700;"' : '')+'>'+r.cso+'</td>' +
         '<td><span class="status" style="color:'+st.color+';background:'+st.bg+';">' +
         '<span style="width:7px;height:7px;border-radius:50%;background:'+st.color+';display:inline-block;"></span>'+r.status+'</span></td>' +
         '</tr>';

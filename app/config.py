@@ -55,6 +55,10 @@ FORECAST_RAIN_THRESHOLD_MM_T = None  # TODO(decide): derive from our rainfall da
 CSO_NEARBY_RADIUS_KM = 5.0  # of 53 Delaware-tagged outfalls, 35 fall within this radius
 CSO_OUTFALL_FRESHNESS_HOURS = 24  # per-outfall, not whole-feed - see the D_54 case in the spec
 CSO_TRIGGER_STATUSES = (3, 4)  # 3 = overflow in past 72h, 4 = currently overflowing
+# The one CSOcast code that positively says "no overflow in the past 72h". The dashboard's CSO
+# field only says "No overflow" when at least one fresh nearby outfall reports this - code 0
+# ("no data") is NOT evidence of no overflow.
+CSO_NO_OVERFLOW_STATUS = 1
 # Deliberately a plain literal, not computed from LOW_CONFIDENCE_CUTOFF - just needs to stay
 # below it so a CSO-forced Unsafe always queues a Milestone 8 confirmatory sample.
 CSO_OVERRIDE_CONFIDENCE = 0.3

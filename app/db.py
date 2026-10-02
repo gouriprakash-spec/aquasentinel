@@ -40,6 +40,9 @@ CREATE TABLE IF NOT EXISTS readings (
     cso_outfall_status INTEGER,
     cso_distance_km REAL,
     cso_last_poll TEXT,
+    -- The dashboard's CSO field: "Overflow" / "No overflow" / "Reading unavailable".
+    -- NULL on rows stored before this existed - read back as "Reading unavailable".
+    cso_state TEXT,
     threshold_cfu_100ml INTEGER NOT NULL,
     model_version TEXT NOT NULL,
     regime TEXT NOT NULL,
@@ -70,6 +73,7 @@ _CSO_COLUMNS = [
     ("cso_outfall_status", "INTEGER"),
     ("cso_distance_km", "REAL"),
     ("cso_last_poll", "TEXT"),
+    ("cso_state", "TEXT"),
 ]
 
 
@@ -106,9 +110,9 @@ def insert_reading(reading: dict, db_path: Path | None = None) -> int:
                 precip_mm, precip_prev_24h_mm,
                 precip_prev_48h_mm, rainfall_source, decision_basis, rule_threshold_mm,
                 model_probability_unsafe,
-                cso_outfall_name, cso_outfall_status, cso_distance_km, cso_last_poll,
+                cso_outfall_name, cso_outfall_status, cso_distance_km, cso_last_poll, cso_state,
                 threshold_cfu_100ml, model_version, regime, retrieved_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 reading["location"],
@@ -131,6 +135,7 @@ def insert_reading(reading: dict, db_path: Path | None = None) -> int:
                 cso_status.get("status"),
                 cso_status.get("distance_km"),
                 cso_status.get("last_poll"),
+                evidence.get("cso"),
                 reading["threshold_cfu_100ml"],
                 reading["model_version"],
                 reading["regime"],
