@@ -1,0 +1,152 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 810" width="1200" height="810" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" role="img" aria-labelledby="t d">
+<title id="t">AquaSentinel architecture</title>
+<desc id="d">Outside data sources (USGS gauge, NWS rainfall, PWD CSOcast) feed a scheduled pull inside one Render web service. Deterministic code decides Safe or Unsafe and stores readings in SQLite. Read-only surfaces (dashboard, /api/status, MCP server, llms.txt) serve visitors and AI assistants; alert gating and a FHIR emitter send changes of state to an agency stand-in.</desc>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#3C5560"/></marker></defs>
+<rect width="1200" height="810" fill="#FFFFFF"/>
+<text x="24" y="34" font-size="20" font-weight="700" fill="#1B2A2F" text-anchor="start" letter-spacing="0.4">AquaSentinel — architecture</text>
+<text x="24" y="56" font-size="13" font-weight="400" fill="#52646A" text-anchor="start" letter-spacing="0.4">One Render web service: scheduled pull → deterministic decision → read-only surfaces</text>
+<text x="24" y="106" font-size="11" font-weight="700" fill="#52646A" text-anchor="start" letter-spacing="0.4">OUTSIDE DATA SOURCES</text>
+<text x="936" y="106" font-size="11" font-weight="700" fill="#52646A" text-anchor="start" letter-spacing="0.4">CONSUMERS</text>
+<rect x="300" y="80" width="600" height="640" rx="14" fill="#F8FBFC" stroke="#7FB2C9" stroke-width="1.8"/>
+<text x="312" y="100" font-size="11" font-weight="700" fill="#2F6F8F" text-anchor="start" letter-spacing="0.4">RENDER WEB SERVICE</text>
+<text x="452" y="100" font-size="11" font-weight="400" fill="#52646A" text-anchor="start" letter-spacing="0.4">Python 3.11 · FastAPI + uvicorn · one process</text>
+<g class="card" data-name="USGS Water Services">
+<rect class="box" x="24" y="120" width="240" height="88" rx="10" fill="#FFFFFF" stroke="#8DA0A6" stroke-width="1.5"/>
+<text x="36" y="142" font-size="14" font-weight="700" fill="#1B2A2F">USGS Water Services</text>
+<text x="36" y="162" font-size="12.5" fill="#52646A">Penn&#x27;s Landing gauge 01467200</text>
+<text x="36" y="179" font-size="12.5" fill="#52646A">temp, conductance, DO,</text>
+<text x="36" y="196" font-size="12.5" fill="#52646A">pH, turbidity</text>
+</g>
+<g class="card" data-name="NWS station KPHL">
+<rect class="box" x="24" y="224" width="240" height="88" rx="10" fill="#FFFFFF" stroke="#8DA0A6" stroke-width="1.5"/>
+<text x="36" y="246" font-size="14" font-weight="700" fill="#1B2A2F">NWS station KPHL</text>
+<text x="36" y="266" font-size="12.5" fill="#52646A">hourly rainfall, 48 h window</text>
+<text x="36" y="283" font-size="12.5" fill="#52646A">fallback: Open-Meteo model</text>
+</g>
+<g class="card" data-name="PWD CSOcast">
+<rect class="box" x="24" y="328" width="240" height="88" rx="10" fill="#FFFFFF" stroke="#8DA0A6" stroke-width="1.5"/>
+<text x="36" y="350" font-size="14" font-weight="700" fill="#1B2A2F">PWD CSOcast</text>
+<text x="36" y="370" font-size="12.5" fill="#52646A">sewer-outfall status</text>
+<text x="36" y="387" font-size="12.5" fill="#52646A">within 5 km, updated ≤ 24 h</text>
+</g>
+<g class="card" data-name="DRBC lab samples">
+<rect class="box" x="24" y="470" width="240" height="88" rx="10" fill="#FFFFFF" stroke="#8DA0A6" stroke-width="1.5" stroke-dasharray="6 4"/>
+<text x="36" y="492" font-size="14" font-weight="700" fill="#1B2A2F">DRBC lab samples</text>
+<text x="36" y="512" font-size="12.5" fill="#52646A">E. coli labels, 2005–2025</text>
+<text x="36" y="529" font-size="12.5" fill="#52646A">used to train the model offline</text>
+</g>
+<text x="24" y="580" font-size="11" font-weight="400" fill="#52646A" text-anchor="start" letter-spacing="0.4">dashed = used offline / not called at runtime</text>
+<path d="M264 164 H282 M264 268 H282 M264 372 H282 M282 164 V372" fill="none" stroke="#3C5560" stroke-width="1.6"/>
+<path d="M282 244 H318" fill="none" stroke="#3C5560" stroke-width="1.6" marker-end="url(#arrow)"/>
+<g class="card" data-name="Scheduler">
+<rect class="box" x="320" y="124" width="270" height="52" rx="10" fill="#F4F8FA" stroke="#9DB4BE" stroke-width="1.5"/>
+<text x="332" y="146" font-size="14" font-weight="700" fill="#1B2A2F">Scheduler</text>
+<text x="332" y="166" font-size="12.5" fill="#52646A">at startup + top of every hour</text>
+</g>
+<g class="card" data-name="Pull &amp; validate (httpx)">
+<rect class="box" x="320" y="206" width="270" height="76" rx="10" fill="#F4F8FA" stroke="#9DB4BE" stroke-width="1.5"/>
+<text x="332" y="228" font-size="14" font-weight="700" fill="#1B2A2F">Pull &amp; validate (httpx)</text>
+<text x="332" y="248" font-size="12.5" fill="#52646A">fail closed: a missing or malformed</text>
+<text x="332" y="265" font-size="12.5" fill="#52646A">input means nothing is stored</text>
+</g>
+<g class="card" data-name="Decide — deterministic code">
+<rect class="box" x="320" y="310" width="270" height="130" rx="10" fill="#E8F3EC" stroke="#4F9A72" stroke-width="1.5"/>
+<text x="332" y="332" font-size="14" font-weight="700" fill="#1B2A2F">Decide — deterministic code</text>
+<text x="332" y="352" font-size="12.5" fill="#52646A">Rainfall rule → Safe / Unsafe</text>
+<text x="332" y="369" font-size="12.5" fill="#52646A">Model → confidence only</text>
+<text x="332" y="386" font-size="12.5" fill="#52646A">CSO rule → can only escalate</text>
+<text x="332" y="403" font-size="12.5" fill="#52646A">CSO field: Overflow · No overflow ·</text>
+<text x="332" y="420" font-size="12.5" fill="#52646A">Reading unavailable</text>
+</g>
+<g class="card" data-name="SQLite">
+<rect class="box" x="320" y="468" width="270" height="72" rx="10" fill="#FFF5E1" stroke="#D49A2C" stroke-width="1.5"/>
+<text x="332" y="490" font-size="14" font-weight="700" fill="#1B2A2F">SQLite</text>
+<text x="332" y="510" font-size="12.5" fill="#52646A">one row per gauge reading</text>
+<text x="332" y="527" font-size="12.5" fill="#52646A">+ alert state, FHIR Flags</text>
+</g>
+<g class="card" data-name="Alert gating">
+<rect class="box" x="320" y="568" width="270" height="58" rx="10" fill="#F4F8FA" stroke="#9DB4BE" stroke-width="1.5"/>
+<text x="332" y="590" font-size="14" font-weight="700" fill="#1B2A2F">Alert gating</text>
+<text x="332" y="610" font-size="12.5" fill="#52646A">change of state · 48 h all-clear</text>
+</g>
+<g class="card" data-name="FHIR emitter">
+<rect class="box" x="320" y="652" width="270" height="54" rx="10" fill="#F4F8FA" stroke="#9DB4BE" stroke-width="1.5"/>
+<text x="332" y="674" font-size="14" font-weight="700" fill="#1B2A2F">FHIR emitter</text>
+<text x="332" y="694" font-size="12.5" fill="#52646A">Observation + Flag (R4)</text>
+</g>
+<path d="M455 176 V204" fill="none" stroke="#3C5560" stroke-width="1.6" marker-end="url(#arrow)"/>
+<path d="M455 282 V308" fill="none" stroke="#3C5560" stroke-width="1.6" marker-end="url(#arrow)"/>
+<path d="M455 440 V466" fill="none" stroke="#3C5560" stroke-width="1.6" marker-end="url(#arrow)"/>
+<path d="M455 540 V566" fill="none" stroke="#3C5560" stroke-width="1.6" marker-end="url(#arrow)"/>
+<path d="M455 626 V650" fill="none" stroke="#3C5560" stroke-width="1.6" marker-end="url(#arrow)"/>
+<text x="620" y="140" font-size="11" font-weight="700" fill="#2F6F8F" text-anchor="start" letter-spacing="0.4">READ-ONLY SURFACES · stored data only</text>
+<g class="card" data-name="Dashboard">
+<rect class="box" x="620" y="150" width="260" height="56" rx="10" fill="#EAF3F9" stroke="#5B9BBE" stroke-width="1.5"/>
+<text x="632" y="172" font-size="14" font-weight="700" fill="#1B2A2F">Dashboard</text>
+<text x="632" y="192" font-size="12.5" fill="#52646A">GET /  +  /api/readings</text>
+</g>
+<g class="card" data-name="/api/status">
+<rect class="box" x="620" y="218" width="260" height="72" rx="10" fill="#EAF3F9" stroke="#5B9BBE" stroke-width="1.5"/>
+<text x="632" y="240" font-size="14" font-weight="700" fill="#1B2A2F">/api/status</text>
+<text x="632" y="260" font-size="12.5" fill="#52646A">JSON status contract</text>
+<text x="632" y="277" font-size="12.5" fill="#52646A">stale &gt; 2 h → unavailable</text>
+</g>
+<g class="card" data-name="MCP server  /mcp">
+<rect class="box" x="620" y="302" width="260" height="88" rx="10" fill="#EAF3F9" stroke="#5B9BBE" stroke-width="1.5"/>
+<text x="632" y="324" font-size="14" font-weight="700" fill="#1B2A2F">MCP server  /mcp</text>
+<text x="632" y="344" font-size="12.5" fill="#52646A">list_monitored_locations</text>
+<text x="632" y="361" font-size="12.5" fill="#52646A">get_current_status</text>
+<text x="632" y="378" font-size="12.5" fill="#52646A">get_recent_readings</text>
+</g>
+<g class="card" data-name="/llms.txt + JSON-LD">
+<rect class="box" x="620" y="402" width="260" height="56" rx="10" fill="#EAF3F9" stroke="#5B9BBE" stroke-width="1.5"/>
+<text x="632" y="424" font-size="14" font-weight="700" fill="#1B2A2F">/llms.txt + JSON-LD</text>
+<text x="632" y="444" font-size="12.5" fill="#52646A">for agents that read pages</text>
+</g>
+<path d="M590 504 H606 V178 M606 246 H618 M606 346 H618 M606 430 H618" fill="none" stroke="#3C5560" stroke-width="1.6"/>
+<path d="M606 178 H618" fill="none" stroke="#3C5560" stroke-width="1.6" marker-end="url(#arrow)"/>
+<path d="M606 246 H618" fill="none" stroke="#3C5560" stroke-width="1.6" marker-end="url(#arrow)"/>
+<path d="M606 346 H618" fill="none" stroke="#3C5560" stroke-width="1.6" marker-end="url(#arrow)"/>
+<path d="M606 430 H618" fill="none" stroke="#3C5560" stroke-width="1.6" marker-end="url(#arrow)"/>
+<g class="card" data-name="Only the scheduler fetches">
+<rect class="box" x="620" y="478" width="260" height="84" rx="10" fill="#FDF1EF" stroke="#C9645A" stroke-width="1.5"/>
+<text x="632" y="500" font-size="14" font-weight="700" fill="#1B2A2F">Only the scheduler fetches</text>
+<text x="632" y="520" font-size="12.5" fill="#52646A">No button, no pull endpoint:</text>
+<text x="632" y="537" font-size="12.5" fill="#52646A">visitors and assistants only read.</text>
+</g>
+<g class="card" data-name="Visitors&#x27; browsers">
+<rect class="box" x="936" y="150" width="240" height="56" rx="10" fill="#F4F8FA" stroke="#9DB4BE" stroke-width="1.5"/>
+<text x="948" y="172" font-size="14" font-weight="700" fill="#1B2A2F">Visitors&#x27; browsers</text>
+<text x="948" y="192" font-size="12.5" fill="#52646A">public dashboard, no login</text>
+</g>
+<g class="card" data-name="AI assistants">
+<rect class="box" x="936" y="262" width="240" height="100" rx="10" fill="#F4F8FA" stroke="#9DB4BE" stroke-width="1.5"/>
+<text x="948" y="284" font-size="14" font-weight="700" fill="#1B2A2F">AI assistants</text>
+<text x="948" y="304" font-size="12.5" fill="#52646A">Claude: primary demo</text>
+<text x="948" y="321" font-size="12.5" fill="#52646A">Meta Muse: untested</text>
+<text x="948" y="338" font-size="12.5" fill="#52646A">read via MCP or /api/status</text>
+</g>
+<g class="card" data-name="Crawlers &amp; LLM agents">
+<rect class="box" x="936" y="386" width="240" height="56" rx="10" fill="#F4F8FA" stroke="#9DB4BE" stroke-width="1.5"/>
+<text x="948" y="408" font-size="14" font-weight="700" fill="#1B2A2F">Crawlers &amp; LLM agents</text>
+<text x="948" y="428" font-size="12.5" fill="#52646A">read /llms.txt and JSON-LD</text>
+</g>
+<g class="card" data-name="Agency stand-in (RPHSA)">
+<rect class="box" x="936" y="640" width="240" height="78" rx="10" fill="#F4F8FA" stroke="#9DB4BE" stroke-width="1.5" stroke-dasharray="6 4"/>
+<text x="948" y="662" font-size="14" font-weight="700" fill="#1B2A2F">Agency stand-in (RPHSA)</text>
+<text x="948" y="682" font-size="12.5" fill="#52646A">separate process</text>
+<text x="948" y="699" font-size="12.5" fill="#52646A">not deployed on Render</text>
+</g>
+<path d="M880 178 H934" fill="none" stroke="#3C5560" stroke-width="1.6" marker-end="url(#arrow)"/>
+<path d="M880 268 H934" fill="none" stroke="#3C5560" stroke-width="1.6" marker-end="url(#arrow)"/>
+<path d="M880 346 H934" fill="none" stroke="#3C5560" stroke-width="1.6" marker-end="url(#arrow)"/>
+<path d="M880 430 H934" fill="none" stroke="#3C5560" stroke-width="1.6" marker-end="url(#arrow)"/>
+<path d="M590 679 H934" fill="none" stroke="#3C5560" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#arrow)"/>
+<text x="740" y="668" font-size="11" font-weight="400" fill="#52646A" text-anchor="middle" letter-spacing="0.4">FHIR Subscription · on change of state</text>
+<g class="card" data-name="rule"><rect class="box" x="24" y="748" width="360" height="40" rx="20" fill="#EAF3F9" stroke="#5B9BBE" stroke-width="1.2"/>
+<text x="204.0" y="773" font-size="13" font-weight="600" fill="#1B2A2F" text-anchor="middle">Code decides — agents only read</text></g>
+<g class="card" data-name="rule"><rect class="box" x="420" y="748" width="360" height="40" rx="20" fill="#EAF3F9" stroke="#5B9BBE" stroke-width="1.2"/>
+<text x="600.0" y="773" font-size="13" font-weight="600" fill="#1B2A2F" text-anchor="middle">MCP server is read-only: no tool changes anything</text></g>
+<g class="card" data-name="rule"><rect class="box" x="816" y="748" width="360" height="40" rx="20" fill="#EAF3F9" stroke="#5B9BBE" stroke-width="1.2"/>
+<text x="996.0" y="773" font-size="13" font-weight="600" fill="#1B2A2F" text-anchor="middle">No alerts pushed to the public</text></g>
+</svg>
