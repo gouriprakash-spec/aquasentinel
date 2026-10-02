@@ -57,9 +57,13 @@ Build top to bottom. If behind schedule on Oct 1, cut from the bottom, never the
    - USGS 01467200 + NWS KPHL, not NOAA NCEI, which lags too much for live use; wired into the
    dashboard via `app/server.py`, see `plan.md` milestone 2) -> alert rules -> FHIR Observation +
    Flag to the RPHSA stub.
-2. **Two co-equal contributions:** the read-only MCP server / `/api/status` / `/llms.txt` /
-   JSON-LD agent-ready layer, and one scripted turn of the Sampling Coordinator loop.
-3. **Stretch, cut first:** CSO overflow rule (CSOcast access unverified), forecast rain heads-up.
+2. **Built contribution:** the read-only MCP server / `/api/status` / `/llms.txt` / JSON-LD
+   agent-ready layer (DONE Sep 27), and the CSO overflow rule (DONE Oct 1). **Cut Oct 2:** the
+   Advisory Reader Agent (milestone 7) and the Sampling Coordinator loop (milestone 8) are now
+   Future directions in `docs/product-brief.md`, not build scope. The demo instead shows an
+   outside personal assistant (Meta's Muse) polling the read-only MCP server (needs the public
+   deploy first).
+3. **Stretch, cut first:** forecast rain heads-up.
 Oct 3-4 are reserved for the demo video, the public repo, and the submission text.
 
 ## Architecture Rules (non-negotiable)

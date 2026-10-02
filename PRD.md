@@ -28,10 +28,13 @@ Sep 30). No direct-to-public alerting: see the scope decision below.
 public were cut, deliberately, not for time. Deciding to alert citizens about a public-health
 risk, and actually doing it, is the public health agency's jurisdiction — not a hackathon
 prototype's to claim unilaterally without the agency's buy-in. FHIR-to-RPHSA (agency-first,
-year-round) stays the only notification channel; the public dashboard is unaffected. The project's
-three co-equal contributions are now: the agent-ready publishing layer (MCP/`/llms.txt`/JSON-LD),
-the Advisory Reader Agent's extensibility to other advisory sites, and the Sampling Coordinator's
-self-improving label loop.
+year-round) stays the only notification channel; the public dashboard is unaffected.
+
+Scope update 2026-10-02: the Advisory Reader Agent and the Sampling Coordinator Agent were cut
+from the build (one day of build time left) and moved to Future directions in
+`docs/product-brief.md`. The built contribution is the agent-ready publishing layer
+(MCP/`/llms.txt`/JSON-LD); the demo shows an outside personal assistant (Meta's Muse) polling it
+for readings.
 
 ## Non-Goals
 - Predicting illness, or reporting a bacteria value the system does not have. Language is
@@ -85,7 +88,7 @@ Build order is top to bottom; see `plan.md` for the cut line.
   `Flag` on threshold crossings (active → inactive for in-effect → all-clear), delivered over a
   FHIR `Subscription` to the stubbed RPHSA system. This is the only notification channel that
   exists — agency-first, by design (see the Goal section's scope decision).
-- **Agent-ready layer (one of three co-equal contributions).** `GET /api/status` returning the
+- **Agent-ready layer (the built contribution).** `GET /api/status` returning the
   contract; a **read-only** MCP server (`list_monitored_locations`, `get_current_status`,
   `get_recent_readings` — no write tools); `/llms.txt`; and schema.org `Dataset` JSON-LD on the
   page. All generated from one scoring output so they cannot disagree.
@@ -93,15 +96,16 @@ Build order is top to bottom; see `plan.md` for the cut line.
   dashboard banner report the same tier and timestamp for the same reading.
 
 ### Nice-to-have (later)
-- **Sampling Coordinator Agent (one of three co-equal contributions), one scripted turn:**
+- **CUT 2026-10-02, now Future directions — Sampling Coordinator Agent, one scripted turn:**
   low-confidence or high-risk signal → drafted agency request → returned lab result (a held-out
-  historical DRBC result stands in) → deterministic label gate → retrain.
-- **Advisory Reader Agent (one of three co-equal contributions), native mode:** reading
+  historical DRBC result stands in) → deterministic label gate → retrain. Only the trigger
+  protocol was designed (`docs/superpowers/specs/2026-10-02-sampling-trigger-protocol-design.md`).
+- **CUT 2026-10-02, now Future directions — Advisory Reader Agent, native mode:** reading
   AquaSentinel through its own MCP server and emitting the normalized contract with provenance —
   demonstrates the reader pattern is designed to extend to other advisory sites, not just
-  AquaSentinel's own.
-- CSO overflow rule: active overflow near the reach forces Unsafe and lowers confidence, naming
-  the reason. Blocked on CSOcast access and reuse terms.
+  AquaSentinel's own. Spec and plan are kept in `docs/superpowers/`.
+- CSO overflow rule: DONE 2026-10-01. Active overflow near the reach forces Unsafe and lowers
+  confidence, naming the reason.
 - Rainfall-forecast heads-up from the NWS gridpoint `quantitativePrecipitation`, shown separately
   and labeled as forecast-based. It never changes the current tier. Blocked on deriving
   threshold T.

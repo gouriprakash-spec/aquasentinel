@@ -10,8 +10,8 @@ reach Philadelphia's existing RiverCast advisory cannot see. Because an E. coli 
 turbidity, specific conductance, temperature, dissolved oxygen) and classify it Safe or Unsafe
 against EPA's 235 CFU/100 mL single-sample limit. One scoring output feeds three surfaces: the
 dashboard banner, `/api/status` plus a read-only MCP server, and FHIR resources sent to a stubbed
-health agency. A Sampling Coordinator Agent requests confirmatory samples where the model is
-unsure. The governing rule throughout: **agents read and draft, deterministic code decides.**
+health agency. A Sampling Coordinator Agent that requests confirmatory samples where the model
+is unsure is designed but not built (cut 2026-10-02, see milestone 8). The governing rule throughout: **agents read and draft, deterministic code decides.**
 
 Now, because the data exist and are joined (330 labeled samples, built and reproducible in
 `AquaSentinel-dataset/`), and because the hackathon build window closes Oct 4, 2026.
@@ -75,12 +75,14 @@ Build top to bottom. If behind on Oct 1, **cut from the bottom, never the middle
    `docs/superpowers/specs/2026-09-26-fhir-milestone4-design.md` for the full design. `app/fhir/`,
    `app/rphsa_stub.py`; 43 tests across `test_fhir_*.py` and `test_rphsa_stub.py`, including an
    end-to-end delivery test. Endpoint auth gap closed 2026-09-27.
-5. **Agent-ready layer. DONE 2026-09-27** (first of three co-equal contributions — see
+5. **Agent-ready layer. DONE 2026-09-27** (the built agent-ready contribution; the other two
+   originally planned contributions, milestones 7 and 8, were cut 2026-10-02 — see
    `docs/product-brief.md`). `/api/status`, the read-only MCP server, `/llms.txt`, JSON-LD. Done
    when the consistency test passes — MCP, `/api/status`, and the banner agree on tier and
    timestamp for one reading.
 6. **CSO overflow rule. DONE 2026-10-01.** Forces Unsafe (and drops confidence low enough to
-   queue a Milestone 8 confirmatory sample) when a fresh, nearby outfall shows active or recent
+   queue a Milestone 8 confirmatory sample - Milestone 8 is now cut, so this is design intent
+   only) when a fresh, nearby outfall shows active or recent
    overflow — a one-directional escalation layered on the rainfall rule (Milestone 1), never
    replacing it: it can only push Safe → Unsafe, never the reverse, and has no opinion at all
    when no outfall qualifies or the feed is unreachable. Full design and build record:
@@ -121,23 +123,32 @@ Build top to bottom. If behind on Oct 1, **cut from the bottom, never the middle
    Bonus, not built: layer 1 of the same service (`ows_csocast_raingauge_status`) is PWD's own
    local rain gauge network and may be a better rainfall source than NWS/Open-Meteo for this
    rule specifically — remains a separate, un-started decision.
-7. **Advisory Reader Agent, native mode** (second of three co-equal contributions). Reads a
-   source's agent-ready interface (AquaSentinel's own MCP server, as the reference native
-   source) and normalizes the result with provenance, without ever remapping a source's rating
-   onto AquaSentinel's own scale. In scope, not stretch — cut from the bottom of this list first
-   if time runs short. Design spec:
-   `docs/superpowers/specs/2026-09-27-advisory-reader-agent-design.md`; not yet built.
-8. **Sampling Coordinator, one scripted turn** (third of three co-equal contributions). Low-confidence
-   signal → drafted agency request → held-out DRBC result → label gate → retrain. Done when the
-   turn runs end to end in the demo, with no claim of a measured accuracy gain. In scope, not
-   stretch.
+7. **Advisory Reader Agent, native mode. CUT 2026-10-02** (moved to `docs/product-brief.md`'s
+   Future directions; Gouri's call with one day of build time left). It would read a source's
+   agent-ready interface (AquaSentinel's own MCP server, as the reference native source) and
+   normalize the result with provenance, without ever remapping a source's rating onto
+   AquaSentinel's own scale. Reading our own server was also a circular proof; an outside
+   personal assistant polling AquaSentinel (the Muse demo, see milestone 10) shows the interface
+   working more convincingly. Kept for later, not deleted: design spec
+   `docs/superpowers/specs/2026-09-27-advisory-reader-agent-design.md` and implementation plan
+   `docs/superpowers/plans/2026-10-01-advisory-reader-agent-milestone7.md`. Not built.
+8. **Sampling Coordinator, one scripted turn. CUT 2026-10-02** (moved to Future directions;
+   same reason). Low-confidence signal → drafted agency request → held-out DRBC result → label
+   gate → retrain. Only its first decision set was done: the trigger protocol, written and
+   committed in `docs/superpowers/specs/2026-10-02-sampling-trigger-protocol-design.md`. The
+   inbox, result matching, label gate rules, and retrain were never decided or built.
 9. **Stretch, cut first.** The forecast rain heads-up (threshold T not yet derived); and, only if
-   time allows after milestones 6, 7, and 8 are done, a WhatsApp notification to one fixed
+   time allows, a WhatsApp notification to one fixed
    internal group (project team/stakeholders, e.g. for demo purposes) on a tier change. **This is
    not a reopening of the "no direct-to-public alerting" scope decision above** — the audience is
    internal only, never river users or the general public, and RPHSA's FHIR delivery (milestone 4)
    stays the only public-health notification channel. Confirmed with Gouri 2026-09-27.
-10. **Oct 3–4 — reserved.** Demo video, public repo, submission text. Not build time.
+10. **Oct 3–4 — reserved.** Demo video, public repo, submission text. Not build time. The demo
+    shows an outside personal assistant (Meta's Muse, over WhatsApp) polling AquaSentinel's
+    read-only MCP server for a reading — framed as "a person asks their assistant", never as
+    AquaSentinel alerting anyone. Planned, not yet tested: it needs the app deployed to a public
+    host (Render), the MCP hostname allowlist updated, and Muse access; Claude or ChatGPT
+    calling the same endpoint is the fallback.
 
 ## Technical Approach
 - **Architecture:** four stages — SOURCES → READ → DECIDE → ACT. Agents sit only in READ (and in
@@ -154,8 +165,8 @@ Build top to bottom. If behind on Oct 1, **cut from the bottom, never the middle
   - *Thin API server* (FastAPI): serves the static dashboard, `/api/status`, `/llms.txt`, and
     hosts the read-only MCP server.
   - *FHIR emitter*: Observation + Flag from the same scoring output, to the RPHSA stub.
-  - *Sampling Coordinator Agent* + *label gate*: drafts and tracks; code decides what becomes a
-    training label.
+  - *Sampling Coordinator Agent* + *label gate* (designed, not built - cut 2026-10-02): drafts
+    and tracks; code decides what becomes a training label.
 - **Data flow:** USGS + NOAA → scoring job → **one** scoring output → (a) dashboard banner and
   table, (b) `/api/status` + MCP + JSON-LD, (c) validator/gating → FHIR Flag to RPHSA, (d) on high
   risk *or* low confidence → sampling request. Nothing computes status twice.

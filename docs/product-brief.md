@@ -10,6 +10,15 @@ not a hackathon prototype's to claim without its buy-in. FHIR-to-RPHSA stays the
 channel, agency-first and year-round; the public dashboard is unaffected. The three co-equal
 contributions are now the agent-ready publishing layer, the Advisory Reader Agent's extensibility,
 and the Sampling Coordinator's self-improving loop.*
+*Revised Oct 2, 2026: the Advisory Reader Agent and the Sampling Coordinator Agent are cut from
+the build and moved to Future directions (Gouri's call, with one day of build time left: a
+deployed, demonstrable product over two more half-built pieces). This supersedes the "three
+co-equal contributions" framing above. What is built: the agent-ready publishing layer (MCP
+server, `/api/status`, `llms.txt`, JSON-LD), the live sensor and CSO rule, the alert rules, and
+FHIR delivery to the agency. What is demonstrated: an outside personal assistant polling
+AquaSentinel for readings (a person asks their assistant; AquaSentinel pushes nothing). What is
+designed but not built: both agents. Pillar 1's reader agent and all of Pillar 2 below describe
+the design as intended, not what shipped.*
 
 ## One-line pitch
 
@@ -105,9 +114,9 @@ retrained on Penn's Landing near-shore labels only informs how much to trust tha
 
 **The dashboard.** The public face of AquaSentinel is the landing page in `docs/landing-page/` (hero, live readings, status banner, readings table). Its "Pull latest reading" is real per `docs/landing-page/BUILD-SPEC.md`: proxies from USGS Penn's Landing gauge 01467200, rainfall from NOAA/Open-Meteo, scored by the trained model, with the Safe/Unsafe tier decided deterministically against the EPA 235 CFU/100 mL single-sample limit. Alongside the human-facing page, the dashboard publishes a machine-readable status endpoint in the contract format. There is no reason to scrape a page we control, and no reason for us to decide who else gets to see it — it's public, pull-based, on the same terms for everyone.
 
-**An agent-ready dashboard (one of three co-equal contributions).** AquaSentinel is built to be the kind of site agents can read reliably, not only a site that reads others. It exposes the same scored output through three agent-facing surfaces: a read-only **MCP server** (tools such as `list_monitored_locations` and `get_current_status(location)`, returning the contract); an **`llms.txt`** file that describes the site and points agents to the MCP server and the status endpoint; and **schema.org JSON-LD** on the page describing the dataset, the monitored reach, and when it was last updated. All three, and the human-facing banner, come from one scoring output, so they cannot disagree. The MCP server has no write tools: an agent can read status but cannot change anything. We use MCP because it is the most mature of the emerging agent standards; we deliberately skip WebMCP, a W3C community-group draft published Sep 17, 2026, because it runs inside an open browser page and does not suit a background reading agent. These standards help agents find and call our data; FHIR remains what a health system receives. The two sit side by side.
+**An agent-ready dashboard (the built contribution).** AquaSentinel is built to be the kind of site agents can read reliably, not only a site that reads others. It exposes the same scored output through three agent-facing surfaces: a read-only **MCP server** (tools such as `list_monitored_locations` and `get_current_status(location)`, returning the contract); an **`llms.txt`** file that describes the site and points agents to the MCP server and the status endpoint; and **schema.org JSON-LD** on the page describing the dataset, the monitored reach, and when it was last updated. All three, and the human-facing banner, come from one scoring output, so they cannot disagree. The MCP server has no write tools: an agent can read status but cannot change anything. We use MCP because it is the most mature of the emerging agent standards; we deliberately skip WebMCP, a W3C community-group draft published Sep 17, 2026, because it runs inside an open browser page and does not suit a background reading agent. These standards help agents find and call our data; FHIR remains what a health system receives. The two sit side by side.
 
-**The Advisory Reader Agent (one of three co-equal contributions).** This agent is what makes the agent-ready pattern generalize beyond our own sensor. It works in two modes. In **native mode** it calls a source's published agent interface (an MCP server, or a structured feed advertised in `llms.txt`) and receives structured data; AquaSentinel is the reference native source. In **legacy mode** it would read the page of a site that publishes nothing for agents, such as RiverCast, and extract the rating, with heavier validation than native signals. Legacy mode is designed but deferred for this build (see Future directions); the hackathon build runs native mode only. In native mode the read itself is a deterministic MCP client call — the agentic work this build demonstrates is the reading and normalizing itself, plus the Sampling Coordinator below. Its output is the normalized contract plus provenance: the source URL, the retrieval time, and the verbatim evidence snippet it read the rating from. It maps each source's rating without reinterpreting it. Any third-party rating would keep its own scale and thresholds, never remapped onto AquaSentinel's 235 threshold. The agent does not decide whether to alert, change a tier, or send anything.
+**The Advisory Reader Agent (designed, not built: cut 2026-10-02, see Future directions).** This agent is what makes the agent-ready pattern generalize beyond our own sensor. It works in two modes. In **native mode** it calls a source's published agent interface (an MCP server, or a structured feed advertised in `llms.txt`) and receives structured data; AquaSentinel is the reference native source. In **legacy mode** it would read the page of a site that publishes nothing for agents, such as RiverCast, and extract the rating, with heavier validation than native signals. Legacy mode is designed but deferred for this build (see Future directions); the hackathon build runs native mode only. In native mode the read itself is a deterministic MCP client call — the agentic work this build demonstrates is the reading and normalizing itself, plus the Sampling Coordinator below. Its output is the normalized contract plus provenance: the source URL, the retrieval time, and the verbatim evidence snippet it read the rating from. It maps each source's rating without reinterpreting it. Any third-party rating would keep its own scale and thresholds, never remapped onto AquaSentinel's 235 threshold. The agent does not decide whether to alert, change a tier, or send anything.
 
 The long-term point of the agent is that advisory sites like RiverCast, which offer no machine-readable output today, could be turned into standards-based, agent-readable feeds — the same pattern AquaSentinel demonstrates on itself. For this build we demonstrate the pattern on AquaSentinel's own agent-ready interface and defer third-party sources; see Future directions for what we found on RiverCast and why.
 
@@ -120,6 +129,9 @@ The long-term point of the agent is that advisory sites like RiverCast, which of
 **The health annotation.** Alerts carry a literature-based note from Wade et al. (2003): in freshwater, a one-log increase in E. coli was associated with a relative risk of about 2.12 for gastrointestinal illness. The confidence interval crosses 1.0 (0.925–4.85), so the language is "flag elevated risk," never "predict illness," cross-referenced with the NEEAR studies and EPA's 2012 criteria. Wade is an annotation, not a training label.
 
 ## Pillar 2 — The Sampling Coordinator Agent (adaptive, model-directed)
+
+*Designed, not built: cut from the build 2026-10-02, see Future directions. The trigger protocol
+is written down in `docs/superpowers/specs/2026-10-02-sampling-trigger-protocol-design.md`.*
 
 The same validated signal drives a second, independent consumer aimed at the label-scarcity problem underneath everything. The trigger is a deterministic rule, not an agent's decision: an AquaSentinel signal with high risk **or** confidence below threshold. Signals from third-party sources, once added, would not trigger sampling; there is no AquaSentinel model at those sites to improve.
 
@@ -165,7 +177,7 @@ Caveats we state up front:
 - **AI-Supported Assessment** — the virtual sensor assessing recreation/ecosystem safety from monitoring data, plus a reader agent designed to extend that same assessment pattern to other advisory sites.
 - **Digital Health Standards** — conformance to the official HL7-EU OneAquaHealth FHIR IG (R4) for the prediction Observation, a contributed water-safety `Flag` profile the IG lacks, and real FHIR `Subscription` delivery mechanics (criteria, channel, handshake) to the agency system. On security: agents never decide, validation fails closed, and no agency credentials leave the agency.
 - **Impact and mission alignment** — real Philadelphia data, designed to plug into OneAquaHealth's City Dashboards / Decision Support System via its own FHIR standard, portable to any gauged site, and able to extend to existing advisory sites immediately — respecting agency jurisdiction over public alerting rather than working around it.
-- **Innovation, architecture, UX, scalability** — novelty is the agent-ready publishing pattern, the reader agent's extensibility, and the adaptive sampling loop; the agents-read, code-decides boundary is the architecture story; the dashboard and the agent-ready surfaces (MCP, `/api/status`, `llms.txt`, JSON-LD) are the UX, usable by a person or their own agent on their own terms; adding a source is an adapter, not a new model, and an agent-ready source needs no adapter at all, which is the scalability story.
+- **Innovation, architecture, UX, scalability** — novelty is the agent-ready publishing pattern, shown working with an outside personal assistant (the reader agent's extensibility and the adaptive sampling loop are designed future work, not built); the agents-read, code-decides boundary is the architecture story; the dashboard and the agent-ready surfaces (MCP, `/api/status`, `llms.txt`, JSON-LD) are the UX, usable by a person or their own agent on their own terms; adding a source is an adapter, not a new model, and an agent-ready source needs no adapter at all, which is the scalability story.
 
 ## Scope for the build (Sep 16–Oct 4)
 
@@ -175,22 +187,29 @@ Build for real:
 - A first prediction model — tree ensemble with an MLR baseline and a rules fallback.
 - The dashboard: real `pullReading()` and the machine-readable status endpoint (per `docs/landing-page/BUILD-SPEC.md`).
 - The agent-ready layer: a read-only MCP server, `llms.txt`, and JSON-LD, all served from the same scoring output.
-- The Advisory Reader Agent in native mode, reading AquaSentinel through its MCP server.
 - Deterministic validation and gating, including the fail-closed path.
 - The OAH-conformant Observation, the `Flag` alert, and real FHIR `Subscription` mechanics to the stubbed RPHSA system.
-- The Sampling Coordinator Agent and one simulated loop turn through the label gate.
+
+Demonstrated (planned, not yet tested):
+
+- An outside personal assistant (Meta's Muse, over WhatsApp) polling AquaSentinel's read-only MCP
+  server for the current reading. A person asks their assistant; AquaSentinel pushes nothing.
+
+Cut from the build, designed only (see Future directions):
+
+- The Advisory Reader Agent (native and legacy modes).
+- The Sampling Coordinator Agent and its simulated loop turn through the label gate.
 
 Acceptable to mock or stub:
 
-- The agency's surveillance system (stub FHIR endpoint for RPHSA) and the agency's sampling inbox.
-- The returned lab result (a held-out historical DRBC result stands in).
+- The agency's surveillance system (stub FHIR endpoint for RPHSA).
 - Third-party sources: legacy mode is designed, not built (see Future directions).
 - Out of scope: WebMCP (draft standard, browser-bound).
 - Full multi-city deployment and a measured accuracy gain from the loop.
 
 ## Demo script (3–5 min video)
 
-Open on the WHYY problem and the "day after rain" gap. Show the dashboard pulling a real reading from the Penn's Landing gauge, and show that same status readable through the MCP server / `/api/status` — the same numbers, agent-ready, no scraping required. Then replay a historical rainfall/CSO event (demo clock set to the replayed weekend) so the tier flips to Unsafe. Show the Advisory Reader Agent reading AquaSentinel natively through its MCP server and producing the normalized signal with its provenance. Show validation passing, then a deliberately stale or malformed response failing closed ("status unavailable," no message). On the valid change of state, show the real FHIR `Subscription` handshake between AquaSentinel and the RPHSA stub, and the resulting `Flag` delivered to RPHSA, year-round — the one and only notification path, agency-first. Then show the same signal, at low confidence, triggering the Sampling Coordinator Agent: the drafted agency request, the returned lab result passing the label gate, and the retrain. Close on portability, the deliberate absence of any public alerting, and the one-sentence pitch.
+Open on the WHYY problem and the "day after rain" gap. Show the dashboard pulling a real reading from the Penn's Landing gauge, and show that same status readable through the MCP server / `/api/status` — the same numbers, agent-ready, no scraping required. Then replay a historical rainfall/CSO event (demo clock set to the replayed weekend) so the tier flips to Unsafe. Show a personal assistant (Muse, over WhatsApp) asked "is the river safe right now?" and answering from AquaSentinel's read-only MCP server, with the estimate's caveats intact. Show validation passing, then a deliberately stale or malformed response failing closed ("status unavailable," no message). On the valid change of state, show the real FHIR `Subscription` handshake between AquaSentinel and the RPHSA stub, and the resulting `Flag` delivered to RPHSA, year-round — the one and only notification path, agency-first. Close on portability, the deliberate absence of any public alerting, and the one-sentence pitch.
 
 ## Risks and mitigations
 
@@ -210,6 +229,25 @@ Open on the WHYY problem and the "day after rain" gap. Show the dashboard pullin
 - **Scope in the remaining days** → one native source, one loop turn; the dashboard and notification path come before the sampling agent.
 
 ## Future directions
+
+**The Advisory Reader Agent (cut from the build 2026-10-02).** Designed in Pillar 1 and in
+`docs/superpowers/specs/2026-09-27-advisory-reader-agent-design.md`, with an implementation plan
+already written (`docs/superpowers/plans/`). Native mode reads a source's published agent
+interface (AquaSentinel's own MCP server is the reference source) and normalizes the result with
+provenance, never remapping a source's rating onto AquaSentinel's scale. Legacy mode, for sites
+that publish nothing for agents, is the RiverCast entry below. Cut because the build window
+could not hold it alongside the deploy; reading AquaSentinel's own server was also circular as
+a proof, and an outside assistant polling it (the Muse demo) shows the interface working more
+convincingly.
+
+**The Sampling Coordinator Agent (cut from the build 2026-10-02).** Designed in Pillar 2. The
+first decision set, the trigger protocol, is written and committed:
+`docs/superpowers/specs/2026-10-02-sampling-trigger-protocol-design.md` (a request fires on an
+Unsafe tier or low confidence, with a rolling 24h cooldown and a 24h collection window, both
+anchored to the brief's 18-24h lab turnaround and not confirmed by any agency). Still undecided:
+the stub agency inbox, result matching, the label gate's rules, and retraining. Known limit
+carried forward: DRBC samples about 16 times a year, so even with the cooldown a persistently
+Unsafe stretch could ask for more samples than an agency would take.
 
 **RiverCast as the first legacy-mode source.** Checked Sep 23, 2026. Technically it is easy: the rating is plain page text with a timestamp ("RiverCast is RED for Wednesday, 9/23/2026 at 4:31 AM"), and the site publishes nothing for agents (no API, feed, data download, `robots.txt`, or `llms.txt`). The blocker is reuse: its Terms of Use allow sharing pages only "exactly as presented on the website, without any addition or modification," and prohibit "distribution or republication in any other form ... and any modification whatsoever" without the City's prior written permission. A reworded alert reads as republication in another form (our reading, not legal advice). To pursue it: send a permission request (drafted separately, not in this repo, not sent) to RiverCastInfo@phila.gov; if granted, alerts credit RiverCast, link back, and carry its own E. coli bands (green below 410, yellow 410–1,783, red above 1,783 CFU/100 mL for lightly used areas) without remapping. Also reconcile the 2007 paper's indicator with the site's current E. coli description before citing either.
 
