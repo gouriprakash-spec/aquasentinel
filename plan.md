@@ -64,40 +64,63 @@ Build top to bottom. If behind on Oct 1, **cut from the bottom, never the middle
    testing) correctly failed closed - no fake reading shown, error surfaced in the UI. 31 passing
    tests across `app/tests/test_usgs_ingestion.py`, `test_nws_ingestion.py`, `test_pull_reading.py`,
    `test_db.py`, `test_server.py`.
-3. **Alert rules and gating.** Freshness (>2h → "unavailable"), change of state only, 48-hour
-   all-clear, season gate (public May 1 – Oct 31; agency year-round), fail-closed throughout.
-   Done when tests cover each rule and a deliberately stale input produces no message.
-4. **FHIR out.** OAH IG Observation + `Flag` delivered over a FHIR `Subscription` to the RPHSA
-   stub, with real Subscription mechanics (criteria, channel, handshake) - see
-   `docs/superpowers/specs/2026-09-26-fhir-milestone4-design.md` for the full design. Done when
-   a tier change produces a valid Flag at the stub endpoint, year-round.
+3. **Alert rules and gating. DONE 2026-09-26.** Freshness (>2h → "unavailable"), change of state
+   only, 48-hour all-clear, season gate (public May 1 – Oct 31; agency year-round), fail-closed
+   throughout. `app/alerts/gating.py`; `app/tests/test_gating.py` has 9 tests covering each rule,
+   including a stale input producing no event and never an all-clear. *Amended 2026-09-27: the
+   public channel is cut (see Overview), so the season gate now only matters for the
+   agency-vs-public distinction in the code, not for any live public alert.*
+4. **FHIR out. DONE 2026-09-26.** OAH IG Observation + `Flag` delivered over a FHIR `Subscription`
+   to the RPHSA stub, with real Subscription mechanics (criteria, channel, handshake) - see
+   `docs/superpowers/specs/2026-09-26-fhir-milestone4-design.md` for the full design. `app/fhir/`,
+   `app/rphsa_stub.py`; 43 tests across `test_fhir_*.py` and `test_rphsa_stub.py`, including an
+   end-to-end delivery test. Endpoint auth gap closed 2026-09-27.
 5. **Agent-ready layer. DONE 2026-09-27** (first of three co-equal contributions — see
    `docs/product-brief.md`). `/api/status`, the read-only MCP server, `/llms.txt`, JSON-LD. Done
    when the consistency test passes — MCP, `/api/status`, and the banner agree on tier and
    timestamp for one reading.
-6. **CSO overflow rule.** Forces Unsafe (and lowers confidence) when an outfall near the Center
-   City reach shows active or recent overflow. Promoted out of stretch and moved ahead of the
-   Reader Agent and Sampling Coordinator 2026-09-27 (Gouri's call — lower risk now that access is
-   verified, quicker path to a working rule than the spec→plan cycle the other two still need):
-   CSOcast access was verified live, not just assumed — a public ArcGIS FeatureServer backs the
-   map (`services2.arcgis.com/.../CSOCast_Layerboard/FeatureServer/0`, layer
-   `ows_csocast_outfall_status`), queryable as plain JSON/GeoJSON with no authentication;
-   `"access": "public"` on the hosting item, no restrictive license set. Per-outfall fields:
-   `Status` (0 = data not currently available, 1 = no overflow in past 72h, 3 = overflow in past
-   72h, 4 = currently overflowing), `Status_Message`, `LastPoll`, `Latitude`/`Longitude`,
-   `Waterbody`. 164 outfalls total, matching `docs/product-brief.md`'s figure; 53 tagged
-   `Waterbody='D'` (Delaware), several within ~1km of Penn's Landing. Verified live: two of those
-   (`D_52`, `D_58`) showed a real, current overflow status the same day this was checked,
-   correlating with a real rain event that day. In scope, not stretch. Not yet decided (design
-   work for this milestone, same process as milestone 7's spec): the exact nearby-outfall set
-   (tidal excursion on both sides of Penn's Landing, not only upstream — see
-   `docs/product-brief.md`), and how to fail closed per outfall when its own `LastPoll` is stale
-   (some outfalls show `Status=0` with a stale `LastPoll` from as far back as 2024 — sensor
-   coverage is uneven, so freshness must be checked per outfall, not assumed from the feed as a
-   whole, matching the same freshness pattern already applied to AquaSentinel's own USGS gauge).
-   Bonus, not required for this milestone: layer 1 of the same service
-   (`ows_csocast_raingauge_status`) is PWD's own local rain gauge network and may be a better
-   rainfall source than NWS/Open-Meteo for this rule specifically — a separate decision.
+6. **CSO overflow rule. DONE 2026-10-01.** Forces Unsafe (and drops confidence low enough to
+   queue a Milestone 8 confirmatory sample) when a fresh, nearby outfall shows active or recent
+   overflow — a one-directional escalation layered on the rainfall rule (Milestone 1), never
+   replacing it: it can only push Safe → Unsafe, never the reverse, and has no opinion at all
+   when no outfall qualifies or the feed is unreachable. Full design and build record:
+   `docs/superpowers/specs/2026-10-01-cso-overflow-rule-milestone6-design.md` and
+   `docs/superpowers/plans/2026-10-01-cso-overflow-rule-milestone6.md`.
+
+   CSOcast access re-verified live 2026-10-01 (the org id recorded below from 2026-09-27 had
+   stopped resolving; the real one was re-discovered via the live map's own network traffic, not
+   assumed): `services2.arcgis.com/POWz8dBwmjnei8fu/.../CSOCast_Layerboard/FeatureServer/0`,
+   layer `ows_csocast_outfall_status`, public and unauthenticated. Per-outfall fields: `Status`
+   (0 = no data, 1 = no overflow in past 72h, 3 = overflow in past 72h, 4 = currently
+   overflowing), `Status_Message`, `LastPoll`, `Latitude`/`Longitude`, `Waterbody`. The two open
+   design questions from the original entry are resolved: **radius = 5km** from Penn's Landing
+   (not a published tidal-excursion figure — none exists publicly; chosen from real outfall
+   density and a real live overflow cluster seen during design, disclosed as a chosen default,
+   not invented data), and **freshness is checked per outfall, 24h**, not feed-wide — the real
+   closest Delaware outfall to Penn's Landing (`D_54`, 0.11km) has had a stale `LastPoll` since
+   2024-01-26, so whole-feed freshness would have meant the rule could never fire.
+
+   Built: `app/ingestion/csocast.py` (fetch + radius/freshness filter, fails closed only on a
+   genuine fetch/parse failure — a total CSOcast outage does *not* fail the reading closed,
+   deliberately, since this is an escalation-only add-on, not a required input like the USGS
+   gauge); `app/model/cso_rule.py` (pure escalation decision); wiring into
+   `app/scoring/pull_reading.py`, `app/db.py`, `app/status.py` (and therefore `/api/status` and
+   the MCP server identically), and `app/fhir/resources.py` (a new Observation naming the
+   triggering outfall, included in the RPHSA Bundle only when CSO actually decided the tier).
+   179 tests passing (up from 141 before this milestone).
+
+   The final whole-branch review (live-verified: the rule was actually firing on the real feed
+   during review) caught and fixed three things that would otherwise have shipped broken: the
+   dashboard banner would have shown the *rainfall* reason (and mislabeled confidence as
+   "rule/model agreement") even on a CSO-forced Unsafe reading; several malformed CSOcast
+   responses (an HTML error page served with a 200, null fields, a garbage timestamp) could 500
+   the whole reading instead of degrading to "no CSO signal"; and an existing pre-Milestone-6
+   `aquasentinel.db` file would have broken on first insert (`CREATE TABLE IF NOT EXISTS` is a
+   no-op on an existing table) — `init_db()` now migrates the 4 new columns in on open.
+
+   Bonus, not built: layer 1 of the same service (`ows_csocast_raingauge_status`) is PWD's own
+   local rain gauge network and may be a better rainfall source than NWS/Open-Meteo for this
+   rule specifically — remains a separate, un-started decision.
 7. **Advisory Reader Agent, native mode** (second of three co-equal contributions). Reads a
    source's agent-ready interface (AquaSentinel's own MCP server, as the reference native
    source) and normalizes the result with provenance, without ever remapping a source's rating
