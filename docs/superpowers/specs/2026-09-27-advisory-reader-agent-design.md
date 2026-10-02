@@ -93,8 +93,21 @@ New subpackage `app/reading/`, matching the existing per-concern layout (`app/in
 3. If `location_id` is not given, call `list_monitored_locations()` and use the first
    result's `"id"`.
 4. Call `get_current_status(location_id)`.
-5. Parse the tool result: MCP returns content as `TextContent` items; the actual payload is
-   `json.loads(result.content[0].text)`, not a raw dict (verified live — see Testing).
+5. Parse the tool result. **Amended 2026-10-01**, re-verified live against both tools this
+   build actually calls (the original text below covered only the dict-returning case):
+   - `get_current_status(location_id)` returns a single `dict` → FastMCP gives no
+     `structuredContent` for a bare `dict` return type; the payload is
+     `json.loads(result.content[0].text)`.
+   - `list_monitored_locations()` returns a `list[dict]` → FastMCP infers a schema for a
+     list-typed return and populates `result.structuredContent = {"result": [...]}` with the
+     real list; `content[0].text` is **not** the whole list (confirmed live: with one
+     location registered, `content[0].text` is that single location's JSON object with no
+     enclosing array — naively doing `json.loads(content[0].text)[0]` would silently work
+     today only by accident, and would break or misbehave the moment a second location
+     exists). Use `structuredContent["result"]` for this tool instead.
+   - The parsing helper must handle both shapes: prefer `structuredContent` when present
+     (unwrapping a `{"result": ...}` envelope), fall back to `json.loads(content[0].text)`
+     otherwise.
 6. Wrap the parsed payload, unchanged, into:
    ```python
    {
