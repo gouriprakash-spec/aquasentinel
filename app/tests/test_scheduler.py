@@ -1,8 +1,12 @@
 """Tests for app/scheduler.py and the scheduled pull wired into app/server.py.
 
-The scheduler tests use asyncio.run() with a tiny interval and a fake job, so no real
-60-minute wait and no pytest-asyncio dependency. The server tests monkeypatch
-pull_reading() for the same reason test_server.py does: no live USGS/NWS in unit tests.
+The scheduler tests drive the loop with a fake clock and a fake sleep (the fake sleep just
+moves the fake clock forward), so nothing really waits and there is no pytest-asyncio
+dependency. The server tests monkeypatch pull_reading() for the same reason test_server.py
+does: no live USGS/NWS in unit tests.
+
+Pulls run on the wall clock - at the top of every hour (13:00, 14:00, ...) - plus once at
+startup so a fresh deploy or restart has a reading without waiting up to an hour.
 """
 
 from __future__ import annotations
@@ -10,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import time
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 
 from fastapi.testclient import TestClient
 
@@ -19,11 +24,119 @@ from app.ingestion.usgs import UsgsDataUnavailable
 from app.tests.test_server import _fake_reading
 
 
-def _run_for(seconds: float, coroutine) -> None:
-    """Run the never-ending scheduler loop for a short time, then stop it."""
+HOUR = 3600
+
+
+def _at(hour: int, minute: int = 0, second: float = 0.0) -> datetime:
+    whole_seconds = int(second)
+    microseconds = round((second - whole_seconds) * 1_000_000)
+    return datetime(2026, 10, 2, hour, minute, whole_seconds, microseconds, tzinfo=timezone.utc)
+
+
+class _FakeClock:
+    """A clock and a sleep that share one timeline: sleeping just moves the clock forward."""
+
+    def __init__(self, start: datetime, stop_after_sleeps: int, wake_early_first_sleep: float = 0.0):
+        self.now = start
+        self.sleeps = []
+        self._stop_after_sleeps = stop_after_sleeps
+        self._wake_early_first_sleep = wake_early_first_sleep
+
+    def clock(self) -> datetime:
+        return self.now
+
+    async def sleep(self, seconds: float) -> None:
+        self.sleeps.append(seconds)
+        if len(self.sleeps) > self._stop_after_sleeps:
+            raise asyncio.CancelledError  # ends the never-ending loop, like a shutdown would
+        early = self._wake_early_first_sleep if len(self.sleeps) == 1 else 0.0
+        self.now += timedelta(seconds=seconds - early)
+
+
+def _drive(fake: _FakeClock, job) -> None:
+    try:
+        asyncio.run(scheduler.run_on_the_hour(HOUR, job, clock=fake.clock, sleep=fake.sleep))
+    except asyncio.CancelledError:
+        pass
+
+
+# --- seconds_until_next_boundary: the pure timing rule ---
+
+def test_ten_past_the_hour_waits_until_the_next_top_of_the_hour():
+    assert scheduler.seconds_until_next_boundary(_at(13, 10), HOUR) == 50 * 60
+
+
+def test_exactly_on_the_hour_waits_a_full_hour_not_zero():
+    # The pull for "now" has already happened; the next one is the following hour.
+    assert scheduler.seconds_until_next_boundary(_at(13, 0), HOUR) == HOUR
+
+
+def test_one_second_before_the_hour_waits_one_second():
+    assert scheduler.seconds_until_next_boundary(_at(12, 59, 59), HOUR) == 1
+
+
+def test_four_forty_four_waits_until_five_oclock():
+    assert scheduler.seconds_until_next_boundary(_at(4, 44), HOUR) == 16 * 60
+
+
+# --- the loop ---
+
+def test_runs_immediately_then_exactly_on_each_top_of_the_hour():
+    fake = _FakeClock(_at(13, 10), stop_after_sleeps=3)
+    run_times = []
+
+    _drive(fake, lambda: run_times.append(fake.now))
+
+    # At startup (13:10, so a fresh deploy has a reading), then 14:00, 15:00, 16:00 sharp.
+    assert run_times == [_at(13, 10), _at(14), _at(15), _at(16)]
+
+
+def test_a_slow_job_does_not_push_later_runs_off_the_hour():
+    fake = _FakeClock(_at(13, 10), stop_after_sleeps=2)
+    run_times = []
+
+    def slow_job():
+        run_times.append(fake.now)
+        fake.now += timedelta(minutes=7)  # the job itself takes 7 minutes
+
+    _drive(fake, slow_job)
+
+    assert run_times == [_at(13, 10), _at(14), _at(15)]
+
+
+def test_waking_slightly_early_never_runs_the_job_before_the_hour():
+    # The first sleep returns 0.5s early (13:59:59.5). The job must still wait for 14:00:00,
+    # and must run once there - not at 13:59:59.5 and again at 14:00:00.
+    fake = _FakeClock(_at(13, 10), stop_after_sleeps=2, wake_early_first_sleep=0.5)
+    run_times = []
+
+    _drive(fake, lambda: run_times.append(fake.now))
+
+    assert run_times == [_at(13, 10), _at(14)]
+
+
+def test_a_job_that_raises_does_not_end_the_schedule():
+    fake = _FakeClock(_at(13, 10), stop_after_sleeps=2)
+    run_times = []
+
+    def flaky_job():
+        run_times.append(fake.now)
+        if len(run_times) == 1:
+            raise RuntimeError("simulated crash in the first run")
+
+    _drive(fake, flaky_job)
+
+    # One bad run must not end the schedule - otherwise readings would silently stop
+    # arriving and the status would quietly go "unavailable" forever.
+    assert run_times == [_at(13, 10), _at(14), _at(15)]
+
+
+def test_the_loop_stops_cleanly_when_cancelled():
+    calls = []
+
     async def runner():
-        task = asyncio.create_task(coroutine)
-        await asyncio.sleep(seconds)
+        task = asyncio.create_task(scheduler.run_on_the_hour(HOUR, lambda: calls.append(1)))
+        await asyncio.sleep(0.1)  # long enough for the immediate startup run
         task.cancel()
         try:
             await task
@@ -31,39 +144,10 @@ def _run_for(seconds: float, coroutine) -> None:
             pass
 
     asyncio.run(runner())
-
-
-def test_run_every_runs_the_job_immediately_then_repeats():
-    calls = []
-
-    _run_for(0.2, scheduler.run_every(0.02, lambda: calls.append(1)))
-
-    # Immediately (so a fresh deploy has a reading without waiting an hour) and repeatedly.
-    assert len(calls) >= 3
-
-
-def test_run_every_survives_a_job_that_raises():
-    calls = []
-
-    def flaky_job():
-        calls.append(1)
-        if len(calls) == 1:
-            raise RuntimeError("simulated crash in the first run")
-
-    _run_for(0.2, scheduler.run_every(0.02, flaky_job))
-
-    # One bad run must not end the schedule - otherwise readings would silently stop
-    # arriving and the status would quietly go "unavailable" forever.
-    assert len(calls) >= 2
-
-
-def test_run_every_stops_cleanly_when_cancelled():
-    calls = []
-
-    _run_for(0.1, scheduler.run_every(0.02, lambda: calls.append(1)))
     count_at_stop = len(calls)
     time.sleep(0.1)
 
+    assert count_at_stop == 1  # the startup run, then it was asleep until the next hour
     assert len(calls) == count_at_stop
 
 

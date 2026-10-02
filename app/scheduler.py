@@ -1,7 +1,8 @@
-"""A minimal in-process scheduler: run one job now, then again every N seconds.
+"""A minimal in-process scheduler: run one job now, then again at every wall-clock boundary
+(for an hourly interval, at the top of each hour: 13:00, 14:00, ...).
 
-Why in-process and not a Render cron job: a cron job runs as a separate process with its
-own disk, so it could not write to the web service's SQLite file. Running inside the app
+Why in-process and not a Render cron job: a cron job runs as a separate process with its own
+disk, so it could not write to the web service's SQLite file. Running inside the app
 shares the same database, and it needs no new dependency.
 """
 
@@ -9,17 +10,60 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable
+import math
+from collections.abc import Awaitable, Callable
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
 
-async def run_every(interval_seconds: float, job: Callable[[], None]) -> None:
-    """Run `job` immediately, then every `interval_seconds`, until cancelled.
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
 
-    Runs immediately so a fresh deploy has a reading without waiting a full interval. The job
-    is blocking (HTTP calls, SQLite), so it runs in a worker thread - inline it would stall the
-    whole event loop, including the dashboard and the MCP endpoint.
+
+def seconds_until_next_boundary(now: datetime, interval_seconds: float) -> float:
+    """Seconds from `now` until the next wall-clock multiple of `interval_seconds`.
+
+    Aligned to the Unix epoch, so 3600 gives the top of every hour (the hour boundaries are the
+    same in UTC and in Philadelphia time). Exactly on a boundary this returns a full interval,
+    not zero: the pull for "now" has already happened, so the next one is the following boundary.
+    """
+    epoch = now.timestamp()
+    return (math.floor(epoch / interval_seconds) + 1) * interval_seconds - epoch
+
+
+async def _sleep_until_next_boundary(
+    interval_seconds: float,
+    clock: Callable[[], datetime],
+    sleep: Callable[[float], Awaitable[None]],
+) -> None:
+    now = clock()
+    target_epoch = now.timestamp() + seconds_until_next_boundary(now, interval_seconds)
+    # Loop, not a single sleep: a timer that wakes a hair early would otherwise run the job at
+    # 12:59:59 and then again at 13:00:00. Waiting out the remainder keeps it to one run, on the
+    # hour.
+    while True:
+        remaining = target_epoch - clock().timestamp()
+        if remaining <= 0:
+            return
+        await sleep(remaining)
+
+
+async def run_on_the_hour(
+    interval_seconds: float,
+    job: Callable[[], None],
+    *,
+    clock: Callable[[], datetime] = _utc_now,
+    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+) -> None:
+    """Run `job` immediately, then at every wall-clock multiple of `interval_seconds`, until
+    cancelled. (`clock` and `sleep` are injectable only so tests need not really wait.)
+
+    Runs immediately so a fresh deploy or a restart has a reading without waiting up to a full
+    interval. The job is blocking (HTTP calls, SQLite), so it runs in a worker thread - inline
+    it would stall the whole event loop, including the dashboard and the MCP endpoint. The next
+    boundary is worked out after the job finishes, so a slow job never pushes later runs off
+    the hour.
     """
     while True:
         try:
@@ -28,5 +72,5 @@ async def run_every(interval_seconds: float, job: Callable[[], None]) -> None:
             # Logged loudly, not swallowed: a crash here that ended the loop would silently
             # stop all future pulls, which is worse than one logged failure. (CancelledError
             # is not an Exception subclass, so cancelling the task still stops it.)
-            logger.exception("Scheduled job raised; will retry at the next interval")
-        await asyncio.sleep(interval_seconds)
+            logger.exception("Scheduled job raised; will retry at the next boundary")
+        await _sleep_until_next_boundary(interval_seconds, clock, sleep)

@@ -179,7 +179,8 @@
     <table>
       <thead>
         <tr>
-          <th>TIME</th>
+          <th>TIME <span class="u">gauge measured</span></th>
+          <th>CHECKED <span class="u">we polled</span></th>
           <th>RAIN TODAY <span class="u">mm</span></th>
           <th>RAIN 24H <span class="u">mm</span></th>
           <th>RAIN PRIOR 2 DAYS <span class="u">mm &middot; decides status</span></th>
@@ -335,8 +336,12 @@
     // unavailable - never a made-up "No overflow".
     var cso = isStored ? reading.cso_state : reading.evidence.cso;
     if (cso !== 'Overflow' && cso !== 'No overflow') cso = 'Reading unavailable';
+    // When AquaSentinel last polled for this gauge reading (the real poll time, never a
+    // rounded or made-up hour). Separate from `time`, which is when the gauge measured.
+    var checked = reading.retrieved_at ? formatTime(reading.retrieved_at) : '&mdash;';
     return {
       time: formatTime(time),
+      checked: checked,
       cso: cso,
       rainToday: round1(rainToday),
       rain24: round1(rain24),
@@ -451,6 +456,7 @@
       html +=
         '<tr style="'+rowbg+'">' +
         '<td class="mono">'+r.time+'</td>' +
+        '<td class="mono">'+r.checked+'</td>' +
         '<td class="mono">'+r.rainToday+'</td>' +
         '<td class="mono">'+r.rain24+'</td>' +
         '<td class="mono est">'+r.rain48+'</td>' +

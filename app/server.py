@@ -74,7 +74,7 @@ async def lifespan(app: FastAPI):
     pull_task = None
     if SCHEDULER_ENABLED:
         pull_task = asyncio.create_task(
-            scheduler.run_every(config.SCHEDULED_PULL_INTERVAL_MINUTES * 60, _scheduled_pull)
+            scheduler.run_on_the_hour(config.SCHEDULED_PULL_INTERVAL_MINUTES * 60, _scheduled_pull)
         )
     try:
         async with mcp_server.mcp.session_manager.run():

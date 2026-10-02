@@ -29,6 +29,8 @@ RECREATION_SEASON_END = (10, 31)  # app/alerts/gating.py still computes (current
 # reading fresh until the next attempt - a single USGS hiccup does not flip the status to
 # "unavailable". Without a scheduled pull, /api/status and MCP only ever see a reading when
 # someone happens to open the dashboard.
+# Pulls run on the wall clock at multiples of this interval (60 -> the top of every hour:
+# 13:00, 14:00, ...), plus once at startup so a fresh deploy or restart has a reading.
 SCHEDULED_PULL_INTERVAL_MINUTES = 60
 
 # --- Rules fallback (derived from AquaSentinel-dataset, not invented) ---
