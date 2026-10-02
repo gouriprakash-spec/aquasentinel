@@ -10,6 +10,8 @@ Run: ./venv/bin/uvicorn app.server:app --reload
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -17,8 +19,10 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
 
+from app import config
 from app import db
 from app import mcp_server
+from app import scheduler
 from app.alerts.gating import evaluate_reading
 from app.fhir import emit as fhir_emit
 from app.fhir import routes as fhir_routes
@@ -31,13 +35,51 @@ from app.status import current_status
 LANDING_PAGE_DIR = Path(__file__).resolve().parents[1] / "docs" / "landing-page"
 DATASET_DATE_MODIFIED_TOKEN = "__AQUASENTINEL_DATASET_DATE_MODIFIED__"
 
+logger = logging.getLogger(__name__)
+
+# A module flag (not just config) so a test that runs the real lifespan can switch the timer
+# off and avoid a live USGS call at startup. Production leaves it True.
+SCHEDULER_ENABLED = True
+
+
+def _pull_and_publish() -> dict:
+    """Fetch a real reading, store it, gate it, and send any FHIR event.
+
+    The one shared path for both the dashboard's POST /api/pull-reading and the scheduled
+    pull, so the two can never drift apart. Raises UsgsDataUnavailable/RainfallUnavailable
+    when a source can't be read - callers decide how to surface that.
+    """
+    reading = pull_reading()
+    db.insert_reading(reading)
+    decision = evaluate_reading(reading)
+    fhir_emit.emit_event(reading, decision)
+    return reading
+
+
+def _scheduled_pull() -> None:
+    try:
+        _pull_and_publish()
+    except (UsgsDataUnavailable, RainfallUnavailable) as exc:
+        # Fail closed: nothing is stored, so /api/status keeps reporting "unavailable" once the
+        # last reading goes stale. Logged, not hidden - the next interval simply tries again.
+        logger.warning("Scheduled pull skipped, source unavailable: %s", exc)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     db.init_db()
     fhir_store.init_db()
-    async with mcp_server.mcp.session_manager.run():
-        yield
+    pull_task = None
+    if SCHEDULER_ENABLED:
+        pull_task = asyncio.create_task(
+            scheduler.run_every(config.SCHEDULED_PULL_INTERVAL_MINUTES * 60, _scheduled_pull)
+        )
+    try:
+        async with mcp_server.mcp.session_manager.run():
+            yield
+    finally:
+        if pull_task is not None:
+            pull_task.cancel()
 
 
 app = FastAPI(title="AquaSentinel", lifespan=lifespan)
@@ -76,14 +118,9 @@ def api_pull_reading() -> dict:
     (see app/fhir/emit.py) never surfaces here or to the dashboard.
     """
     try:
-        reading = pull_reading()
+        return _pull_and_publish()
     except (UsgsDataUnavailable, RainfallUnavailable) as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
-
-    db.insert_reading(reading)
-    decision = evaluate_reading(reading)
-    fhir_emit.emit_event(reading, decision)
-    return reading
 
 
 @app.get("/api/readings")

@@ -24,6 +24,13 @@ RECREATION_SEASON_END = (10, 31)  # app/alerts/gating.py still computes (current
 # direct-to-public alerting exists, see plan.md's scope decision 2026-09-26 and Open Questions).
 # Agency (RPHSA) FHIR Flag delivery is year-round - no season gate for it.
 
+# --- Scheduled pull (app/scheduler.py) ---
+# Why 60: well inside FRESHNESS_LIMIT_HOURS (2h), so one failed pull still leaves the previous
+# reading fresh until the next attempt - a single USGS hiccup does not flip the status to
+# "unavailable". Without a scheduled pull, /api/status and MCP only ever see a reading when
+# someone happens to open the dashboard.
+SCHEDULED_PULL_INTERVAL_MINUTES = 60
+
 # --- Rules fallback (derived from AquaSentinel-dataset, not invented) ---
 # Derived by app/model/train.py from AquaSentinel-dataset/data/aquasentinel_labels_master.csv
 # (all rows with a non-null precip_prev_48h_mm and a label, including proxy-less rows) via the

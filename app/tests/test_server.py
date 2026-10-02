@@ -262,10 +262,13 @@ def test_index_page_json_ld_falls_back_to_server_time_when_no_readings(tmp_path,
     assert "__AQUASENTINEL_DATASET_DATE_MODIFIED__" not in response.text
 
 
-def test_mcp_endpoint_responds_to_initialize_and_tools_list():
+def test_mcp_endpoint_responds_to_initialize_and_tools_list(monkeypatch):
     # A plain TestClient(server.app) never runs the app's lifespan (see _client()'s own
     # comment above) - the MCP session manager's task group only starts inside it, so this
     # test needs the context-manager form specifically, unlike the rest of this file.
+    # The scheduled pull starts in that same lifespan; switch it off so this test makes no
+    # live USGS call and writes nothing to the real dev database.
+    monkeypatch.setattr(server, "SCHEDULER_ENABLED", False)
     with TestClient(server.app) as client:
         init_response = client.post(
             "/mcp",
