@@ -78,7 +78,7 @@
   .btn:hover{background:#0A4A57;}
   /* toolbar */
   .toolbar{display:flex;align-items:center;justify-content:space-between;gap:20px;}
-  .toolbar .sub{font-size:13px;color:var(--muted);margin-top:3px;line-height:1.5;max-width:720px;}
+  .toolbar .sub{font-size:13px;color:var(--muted);margin-top:3px;line-height:1.5;}
   .pill{font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--amberink);background:var(--amberbg);border:1px solid var(--amberline);border-radius:999px;padding:6px 11px;}
   /* banner */
   .banner{border-radius:14px;padding:16px 20px;display:flex;align-items:center;gap:16px;font-size:14.5px;}
@@ -146,8 +146,11 @@
 
   <!-- ===== toolbar ===== -->
   <section class="toolbar">
-    <div>
-      <div class="disp" style="font-size:20px;font-weight:600;">Live readings</div>
+    <div style="flex:1;min-width:0;">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <div class="disp" style="font-size:20px;font-weight:600;">Live readings</div>
+        <span class="pill">UPDATED HOURLY</span>
+      </div>
       <div class="sub">Each pull reads live data from the <strong>USGS Penn's Landing gauge (01467200)</strong>
         and the <strong>PHL weather station</strong> (or the Open-Meteo weather model when the
         station's rain record is incomplete), then estimates how safe the Center City tidal
@@ -164,9 +167,6 @@
         rainfall rule &mdash; the banner then names the outfall instead of showing the rain
         amount. Ben Franklin Bridge and Navy Yard are DRBC channel
         stations, shown for context.</div>
-    </div>
-    <div style="display:flex;align-items:center;gap:14px;flex:none;">
-      <span class="pill">UPDATED HOURLY</span>
     </div>
   </section>
 
