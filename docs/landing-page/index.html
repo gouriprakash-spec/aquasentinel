@@ -359,7 +359,8 @@
   // dash instead.
   function fmt1(x){ return (x === null || x === undefined) ? '&mdash;' : round1(x); }
 
-  var RAIN_SOURCE_LABELS = { 'nws': 'NWS station KPHL', 'open-meteo': 'Open-Meteo weather model' };
+  var RAIN_SOURCE_LABELS = { 'nws': 'NWS station KPHL', 'open-meteo': 'Open-Meteo weather model',
+    'nws-partial': 'NWS station KPHL (some hourly reports missing)' };
 
   function formatTime(isoString){
     var d = new Date(isoString);
@@ -388,6 +389,11 @@
     var rain48 = isStored ? reading.precip_prev_48h_mm : reading.evidence.rainfall_mm.precip_prev_48h_mm;
     var ruleThreshold = isStored ? reading.rule_threshold_mm : reading.evidence.rule_threshold_mm;
     var rainSource = isStored ? reading.rainfall_source : reading.evidence.rainfall_source;
+    // When some hourly NWS reports for the two previous days were unavailable, the total is only a
+    // floor (missing hours can only add rain), so the table shows ">= 4.6" and the banner says "at
+    // least" - never an exact-looking number the system does not have.
+    var rainMissingHours = isStored ? reading.rainfall_missing_hours : reading.evidence.rainfall_missing_hours;
+    var rain48IsLowerBound = rainMissingHours > 0;
     var time = isStored ? reading.reading_time : reading.time;
     // What actually decided the tier (Milestone 6): the rainfall rule, or a nearby
     // CSO overflow overriding it. Read from both reading shapes, following the same
@@ -429,6 +435,8 @@
       rainToday: round1(rainToday),
       rain24: round1(rain24),
       rain48: fmt1(rain48),
+      rain48Cell: rain48IsLowerBound ? '&ge;' + fmt1(rain48) : fmt1(rain48),
+      rain48IsLowerBound: rain48IsLowerBound,
       ruleThreshold: fmt1(ruleThreshold),
       rainSource: RAIN_SOURCE_LABELS[rainSource] || null,
       turb: na(proxies.turbidity_fnu),
@@ -488,7 +496,7 @@
         ' ('+latest.csoDistanceKm+' km from Penn\'s Landing)';
     } else {
       reasonClause =
-        ' &middot; rain over the prior 2 days <strong>'+latest.rain48+' mm</strong>' +
+        ' &middot; rain over the prior 2 days ' + (latest.rain48IsLowerBound ? 'at least ' : '') + '<strong>'+latest.rain48+' mm</strong>' +
         ' (Unsafe at &ge; '+latest.ruleThreshold+' mm)' +
         ' &middot; rule/model agreement <strong>'+latest.confidencePct+'</strong>';
     }
@@ -538,7 +546,7 @@
         '<td class="mono">'+r.checked+'</td>' +
         '<td class="mono">'+r.rainToday+'</td>' +
         '<td class="mono">'+r.rain24+'</td>' +
-        '<td class="mono est">'+r.rain48+'</td>' +
+        '<td class="mono est">'+r.rain48Cell+'</td>' +
         '<td class="mono">'+r.turb+'</td>' +
         '<td class="mono">'+r.temp+'</td>' +
         '<td class="mono">'+r.cond+'</td>' +

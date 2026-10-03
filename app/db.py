@@ -52,6 +52,9 @@ CREATE TABLE IF NOT EXISTS readings (
     -- NOT NULL - it is NOT a value and every reader (app.status) returns None for it. Rows from
     -- before this column existed all had gauge data, hence the default of 1.
     gauge_available INTEGER NOT NULL DEFAULT 1,
+    -- How many hourly NWS reports in the rule's two-previous-days window could not be resolved
+    -- (2026-10-03). 0 = precip_prev_48h_mm is exact; above 0 = it is a lower bound ("at least").
+    rainfall_missing_hours INTEGER NOT NULL DEFAULT 0,
     threshold_cfu_100ml INTEGER NOT NULL,
     model_version TEXT NOT NULL,
     regime TEXT NOT NULL,
@@ -97,6 +100,7 @@ _COLUMNS_ADDED_LATER = [
     ("cso_last_poll", "TEXT"),
     ("cso_state", "TEXT"),
     ("gauge_available", "INTEGER NOT NULL DEFAULT 1"),
+    ("rainfall_missing_hours", "INTEGER NOT NULL DEFAULT 0"),
 ]
 
 
@@ -154,6 +158,7 @@ def _reading_columns(reading: dict) -> dict:
         "cso_last_poll": cso_status.get("last_poll"),
         "cso_state": evidence.get("cso"),
         "gauge_available": 1 if evidence.get("gauge_available", True) else 0,
+        "rainfall_missing_hours": evidence.get("rainfall_missing_hours", 0),
         "threshold_cfu_100ml": reading["threshold_cfu_100ml"],
         "model_version": reading["model_version"],
         "regime": reading["regime"],

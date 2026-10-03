@@ -69,6 +69,16 @@ Decisions made one at a time on Sep 23, 2026, and applied to `docs/product-brief
   Full analysis: `docs/superpowers/specs/2026-09-27-model-honesty-fix-milestone1b-design.md`.
 - Basis: independently re-derived twice (once during the original leak review, once fresh
   during spec approval) with matching results both times.
+- **Amended 2026-10-03 (Gouri): a rainfall lower bound can decide Unsafe.** The NWS station leaves
+  holes in its hourly record (29% of the hours in a live 3-day check; old holes stay missing), and
+  one unresolved hour used to fail the whole NWS reading, so the pull fell back to Open-Meteo - which
+  measured 0.0 mm over a window where the resolved NWS hours already showed 4.6 mm. A missing hour can
+  only ADD rain, so when the hours that DID resolve in the two-previous-days window already reach
+  the rule's threshold (>= 2.5 mm), Unsafe is certain and is decided from that known total, stored
+  with the number of missing hours (`rainfall_missing_hours`) and shown as "at least" (`>=`; FHIR
+  uses the `>=` comparator). Below the threshold nothing can be certified, so it falls back to
+  Open-Meteo exactly as before. This path can only produce Unsafe, never a Safe. The model's other
+  rain features still come from Open-Meteo in that case.
 
 ## Still open (to be derived, not decided)
 - ~~Low-confidence cutoff: set from the trained model's validation results.~~ Resolved

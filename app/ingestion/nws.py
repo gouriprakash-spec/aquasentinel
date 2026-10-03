@@ -32,7 +32,10 @@ week of live KPHL data, 2241 observations, 2026-09-23..30):
    never a lower number. Honest consequence: on current live data most calls fail over to
    Open-Meteo (see app/scoring/pull_reading.py:_fetch_rainfall), because api.weather.gov
    drops the raw METAR for roughly 1 in 7 routine reports. That is the correct trade: a
-   missing hour could have been the rain that crosses the 2.5mm rule.
+   missing hour could have been the rain that crosses the 2.5mm rule. (Gouri, 2026-10-03: a
+   gap in the rule's two-previous-days window raises PartialRainfall, which carries the rain
+   that DID resolve. Missing hours can only add rain, so if that known total already reaches the
+   threshold the caller can still call Unsafe - see app/scoring/pull_reading.py:_fetch_rainfall.)
 
 Windows. Each :54 report covers the hour ending at :54, so a local calendar day is the 24
 reports from 00:54 through 23:54 local (a 6-minute offset from true midnight - rain in the
@@ -82,6 +85,25 @@ class RainfallUnavailable(RuntimeError):
     """
 
 
+class PartialRainfall(RainfallUnavailable):
+    """Some hourly reports in the two-previous-days window could not be resolved (Gouri,
+    2026-10-03), but the ones that could are known.
+
+    Still a failure - the exact total is unknown, so no Safe can be certified from it - but it
+    carries what WAS resolved: `known_mm` (the sum of the resolved hours) and `missing_hours`
+    (how many could not be). A missing hour can only add rain, never remove it, so `known_mm` is
+    a true lower bound: if it already reaches the rule's threshold, Unsafe is certain. The caller
+    (app/scoring/pull_reading.py) decides what to do with that. It is a RainfallUnavailable, so
+    anything that only knows the old error keeps working; its message is the first unresolved
+    hour's reason.
+    """
+
+    def __init__(self, message: str, known_mm: float, missing_hours: int):
+        super().__init__(message)
+        self.known_mm = known_mm
+        self.missing_hours = missing_hours
+
+
 def fetch_antecedent_rainfall(
     client: httpx.Client | None = None, now: datetime | None = None
 ) -> dict[str, float]:
@@ -114,14 +136,21 @@ def fetch_antecedent_rainfall(
     if not observations:
         raise RainfallUnavailable("NWS returned no usable observations")
 
+    # The rule's window first, tolerating gaps, so a gap there is reported as a lower bound
+    # (PartialRainfall) instead of an all-or-nothing failure. A gap only in today's or the last
+    # 24h's window is not about the rule's window, so those stay the plain failure below.
+    known_mm, missing_hours, first_reason = _sum_routine_reports_allowing_gaps(
+        observations, two_days_ago_midnight, today_midnight
+    )
+    if missing_hours:
+        raise PartialRainfall(first_reason, known_mm=known_mm, missing_hours=missing_hours)
+
     return {
         "precip_mm": _sum_routine_reports(observations, today_midnight, latest_report),
         "precip_prev_24h_mm": _sum_routine_reports(
             observations, latest_report - timedelta(hours=24), latest_report
         ),
-        "precip_prev_48h_mm": _sum_routine_reports(
-            observations, two_days_ago_midnight, today_midnight
-        ),
+        "precip_prev_48h_mm": known_mm,
     }
 
 
@@ -209,14 +238,38 @@ def _sum_routine_reports(
     RainfallUnavailable if any one of them is missing or can't be resolved."""
     total = 0.0
     for report_time in _routine_report_times(start, end):
-        report = observations.get(report_time)
-        if report is None:
-            raise RainfallUnavailable(
-                f"No NWS routine report at {report_time.isoformat()} - can't account for "
-                "that hour's rain."
-            )
-        total += _hourly_rain_mm(report, report_time)
+        total += _report_rain_mm(observations, report_time)
     return round(total, 1)
+
+
+def _report_rain_mm(observations: dict[datetime, dict], report_time: datetime) -> float:
+    """Rain in the hour ending at one routine report, or raise RainfallUnavailable if that
+    report is absent or can't be resolved."""
+    report = observations.get(report_time)
+    if report is None:
+        raise RainfallUnavailable(
+            f"No NWS routine report at {report_time.isoformat()} - can't account for "
+            "that hour's rain."
+        )
+    return _hourly_rain_mm(report, report_time)
+
+
+def _sum_routine_reports_allowing_gaps(
+    observations: dict[datetime, dict], start: datetime, end: datetime
+) -> tuple[float, int, str | None]:
+    """Like _sum_routine_reports, but never raises for an unresolved hour: returns
+    (sum of the hours that resolved, how many did not, the first unresolved hour's reason).
+    The sum is a lower bound whenever the count is above zero."""
+    known = 0.0
+    missing_hours = 0
+    first_reason = None
+    for report_time in _routine_report_times(start, end):
+        try:
+            known += _report_rain_mm(observations, report_time)
+        except RainfallUnavailable as exc:
+            missing_hours += 1
+            first_reason = first_reason or str(exc)
+    return round(known, 1), missing_hours, first_reason
 
 
 def _hourly_rain_mm(report: dict, report_time: datetime) -> float:

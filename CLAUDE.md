@@ -76,7 +76,9 @@ Oct 3-4 are reserved for the demo video, the public repo, and the submission tex
   missing or stale (older than 2 hours) USGS gauge reading is NOT fail-closed any more, because
   the gauge only feeds the model's rule/model agreement and never decides the tier. That pull
   still produces a row: tier from rainfall + CSO, water-quality columns and agreement "n/a". See
-  `docs/alert-rules-decisions.md` decision 4.
+  `docs/alert-rules-decisions.md` decision 4. *Also amended 2026-10-03:* if some hourly NWS rain
+  reports are missing but the hours that resolved already reach the threshold, that known total
+  (a lower bound, shown as "at least") decides Unsafe; it can never produce a Safe (decision 6).
 - **Two levels only:** Safe / Unsafe at 235 CFU/100 mL. No Caution level.
 - **No direct-to-public alerting.** AquaSentinel never pushes a health-risk message to an
   individual — that decision belongs to the agency. FHIR delivery to RPHSA is the only

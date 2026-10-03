@@ -126,6 +126,9 @@ async def get_current_status(location_id: str) -> dict:
         the tier is still decided (by the rainfall rule and the overflow rule - the gauge never
         decides it), but confidence is null and the water-quality values in proxies are null:
         report them as "not available", never as zero. precip_* values are real-time rainfall.
+        If rainfall_missing_hours is above 0, that many hourly rain reports for the previous two
+        days were unavailable: proxies.precip_prev_48h_mm is then "at least" that many mm (a lower
+        bound), not an exact total; the tier is still decided correctly (Unsafe) from it.
         On an unknown location or no reading yet: {"status": "unavailable", "reason": str}
     """
     if location_id != LOCATION_ID:

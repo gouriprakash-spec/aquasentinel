@@ -48,6 +48,9 @@ def build_status_contract(row: dict) -> dict:
         "decision_basis": row["decision_basis"],
         "rule_threshold_mm": row["rule_threshold_mm"],
         "rainfall_source": row["rainfall_source"],
+        # Above 0: that many hourly NWS reports in the rule's two-previous-days window were
+        # unavailable, so proxies.precip_prev_48h_mm is a lower bound ("at least"), not an exact total.
+        "rainfall_missing_hours": row.get("rainfall_missing_hours", 0),
         "model_probability_unsafe": row["model_probability_unsafe"],
         "cso_status": cso_status,
         # "Overflow" / "No overflow" / "Reading unavailable". A row with no stored value

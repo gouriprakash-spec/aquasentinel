@@ -82,6 +82,7 @@ RAINFALL_48H_DISPLAY_NAME = (
 RAINFALL_SOURCE_DISPLAY = {
     "nws": "NWS station KPHL (hourly routine METAR reports)",
     "open-meteo": "Open-Meteo weather model (fallback when the NWS record is incomplete)",
+    "nws-partial": "NWS station KPHL (some hourly reports missing; the value is a lower bound)",
 }
 
 
@@ -105,6 +106,15 @@ def build_rainfall_observation(reading: dict) -> dict:
         "valueQuantity": {"value": value, "unit": "mm"},
     }
     notes = []
+    missing_hours = evidence.get("rainfall_missing_hours", 0)
+    if missing_hours:
+        # Some hourly reports were unavailable, so the value is the sum of the ones that were:
+        # "at least". FHIR's own way to say that is the Quantity comparator.
+        resource["valueQuantity"]["comparator"] = ">="
+        notes.append(
+            f"Lower bound: {missing_hours} hourly reports in this window were unavailable, so the "
+            "true total is at least this value."
+        )
     source = evidence.get("rainfall_source")
     if source:
         notes.append(f"Source: {RAINFALL_SOURCE_DISPLAY.get(source, source)}.")

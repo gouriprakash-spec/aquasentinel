@@ -26,7 +26,7 @@ from app import config
 from app.ingestion import open_meteo
 from app.ingestion.csocast import CsoDataUnavailable
 from app.ingestion.csocast import fetch_nearby_outfalls as fetch_cso_outfalls
-from app.ingestion.nws import RainfallUnavailable
+from app.ingestion.nws import PartialRainfall, RainfallUnavailable
 from app.ingestion.nws import fetch_antecedent_rainfall as fetch_nws_rainfall
 from app.ingestion.usgs import UsgsDataUnavailable, fetch_usgs_proxies
 from app.model.cso_rule import apply_cso_escalation, classify_cso_state
@@ -70,7 +70,7 @@ def pull_reading() -> dict:
     """
     pulled_at = datetime.now(timezone.utc)
     proxies = _fetch_current_gauge_proxies(pulled_at)  # None = no current gauge reading
-    rainfall, rainfall_source = _fetch_rainfall()
+    rainfall, rainfall_source, rainfall_missing_hours = _fetch_rainfall()
 
     decision = classify_by_rainfall(rainfall["precip_prev_48h_mm"])
     risk_tier = decision["risk_tier"]
@@ -133,6 +133,9 @@ def pull_reading() -> dict:
             ),
             "rainfall_mm": rainfall,
             "rainfall_source": rainfall_source,
+            # 0 = the rain totals are exact. Above 0 = that many hourly NWS reports in the rule's
+            # two-previous-days window could not be resolved, so precip_prev_48h_mm is "at least".
+            "rainfall_missing_hours": rainfall_missing_hours,
             "decision_basis": decision_basis,
             "rule_threshold_mm": config.RAIN_FALLBACK_THRESHOLD_MM,
             "model_probability_unsafe": (
@@ -181,16 +184,34 @@ def _fetch_current_gauge_proxies(now: datetime) -> dict | None:
     return proxies
 
 
-def _fetch_rainfall() -> tuple[dict, str]:
-    """NWS (a physical station) is primary. Open-Meteo (a forecast model) is only used
-    when NWS's own observation is unavailable or ambiguous - see
+def _fetch_rainfall() -> tuple[dict, str, int]:
+    """(rainfall, source, missing_hours). NWS (a physical station) is primary. Open-Meteo (a
+    forecast model) is only used when NWS's own observation is unavailable or ambiguous - see
     app.ingestion.nws.RainfallUnavailable's three causes. If Open-Meteo also fails, this
     still raises RainfallUnavailable and the caller fails closed, unchanged from before.
+
+    Lower bound (Gouri, 2026-10-03): when NWS could resolve only SOME of the hours in the rule's
+    two-previous-days window, the hours it did resolve are a floor (missing hours can only add
+    rain). If that floor already makes the rule say Unsafe, the NWS floor decides - Open-Meteo
+    measured 0.0 mm over a window where NWS had already shown 4.6 mm. If the floor is below the
+    threshold the missing hours could still push it over, so nothing can be certified from it
+    and it falls back to Open-Meteo exactly as before. This path can only produce Unsafe, never
+    a Safe. The model's other rain features (today, last 24h) still come from Open-Meteo.
     """
     try:
-        return fetch_nws_rainfall(), "nws"
+        return fetch_nws_rainfall(), "nws", 0
+    except PartialRainfall as partial:
+        fallback = open_meteo.fetch_antecedent_rainfall()
+        # Same rule function that decides the tier, so the threshold is never copied here.
+        if classify_by_rainfall(partial.known_mm)["risk_tier"] == "Unsafe":
+            logger.warning(
+                "NWS rain is partial (%d hourly reports unresolved); the %.1f mm that did resolve "
+                "already reaches the rule's threshold, so it decides Unsafe", partial.missing_hours, partial.known_mm,
+            )
+            return {**fallback, "precip_prev_48h_mm": partial.known_mm}, "nws-partial", partial.missing_hours
+        return fallback, "open-meteo", 0
     except RainfallUnavailable:
-        return open_meteo.fetch_antecedent_rainfall(), "open-meteo"
+        return open_meteo.fetch_antecedent_rainfall(), "open-meteo", 0
 
 
 def _fetch_cso_signal() -> list | None:
