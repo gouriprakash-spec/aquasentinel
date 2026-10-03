@@ -116,7 +116,7 @@
         <img src="logo.png" alt="AquaSentinel logo">
         <div>
           <h1 class="disp">AquaSentinel</h1>
-          <div class="tag">Real-time water-safety early warning</div>
+          <div class="tag">Real-time water safety warning</div>
         </div>
       </div>
       <p class="statement">
@@ -159,7 +159,7 @@
         <div id="reachMap"></div>
       </div>
       <div class="legend">
-        <span><span style="width:13px;height:13px;background:#D9822B;border-radius:50%;display:inline-block;"></span>USGS proxy gauge (live)</span>
+        <span><span style="width:13px;height:13px;background:#1F4FBF;border-radius:50%;display:inline-block;"></span>USGS proxy gauge (live)</span>
         <span><span style="width:13px;height:13px;border:2.4px solid #B02D1E;border-radius:50%;display:inline-block;"></span>DRBC lab station</span>
         <span><span style="width:13px;height:13px;background:#4A9CBF;border-radius:50%;display:inline-block;"></span>Weather station (NWS)</span>
         <span><span style="width:16px;height:6px;background:#E7A79E;border-radius:3px;display:inline-block;"></span>Monitored reach &middot; alert</span>
@@ -283,7 +283,7 @@
     ).addTo(map);
 
     L.circleMarker([REACH_SITES.gauge.lat, REACH_SITES.gauge.lon], {
-      radius: 8, color: '#8A5A1E', weight: 2, fillColor: '#D9822B', fillOpacity: 1
+      radius: 8, color: '#12307A', weight: 2, fillColor: '#1F4FBF', fillOpacity: 1
     }).addTo(map).bindTooltip("Penn's Landing<br>USGS gauge 01467200", {
       permanent: true, direction: 'right', className: 'reach-label', offset: [10, 0]
     });
