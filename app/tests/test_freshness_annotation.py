@@ -172,19 +172,44 @@ def test_the_dashboard_has_a_date_column_and_no_comment_column(monkeypatch, tmp_
 
     page = client.get("/").text
 
-    assert "<th>DATE</th>" in page
+    assert "<th>POLL DATE</th>" in page
     assert "<th>COMMENT" not in page
-    assert "stale-note" in page  # the banner's stale highlight exists
+    assert 'id="dataNote"' in page  # the note under the table exists
 
 
-def test_the_banner_note_uses_plain_cautious_wording_not_the_word_stale(monkeypatch, tmp_path):
-    """Gouri, 2026-10-03: say the gauge is unavailable and when to check back, rather than
-    "stale" - err on the side of caution, especially when the latest reading is Unsafe."""
+def test_the_note_names_the_silent_sensors_and_sits_under_the_table_not_in_the_banner(monkeypatch, tmp_path):
+    """Gouri, 2026-10-03: the flow/stage sensors at the station keep reporting while its
+    WATER-QUALITY probe is silent, so "the gauge is unavailable" was misleading. The note says
+    which sensors, when they last reported and when AquaSentinel last checked, in plain words (no
+    "stale"), and lives in its own note below the table - not inside the banner."""
     client = _client(monkeypatch, tmp_path)
 
     page = client.get("/").text
 
-    assert "The gauge is currently unavailable." in page
+    assert "The water-quality sensors at the Penn's Landing gauge" in page
+    assert "last checked on" in page
     assert "Check back in an hour for a more recent status." in page
-    assert "Comments: the gauge last measured" not in page
+    # the old wording is gone, and nothing in the banner code adds a note any more
+    assert "The gauge is currently unavailable." not in page
     assert "Stale: the gauge" not in page
+    assert page.index('id="dataNote"') > page.index('id="tbody"')  # under the table
+
+
+def test_the_time_column_is_headed_poll_time_because_it_is_when_we_checked(monkeypatch, tmp_path):
+    """Gouri, 2026-10-03: the column shows when AquaSentinel last POLLED, not when the sensors
+    measured, and a bare "TIME" was read as the reading's time. The header says what it is."""
+    client = _client(monkeypatch, tmp_path)
+
+    page = client.get("/").text
+
+    assert "<th>POLL TIME</th>" in page
+    assert "<th>TIME</th>" not in page
+
+
+def test_the_date_column_is_headed_poll_date_to_match_poll_time(monkeypatch, tmp_path):
+    client = _client(monkeypatch, tmp_path)
+
+    page = client.get("/").text
+
+    assert "<th>POLL DATE</th>" in page
+    assert "<th>DATE</th>" not in page

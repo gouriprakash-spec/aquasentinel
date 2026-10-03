@@ -79,7 +79,7 @@
   /* toolbar */
   .toolbar{display:flex;align-items:center;justify-content:space-between;gap:20px;}
   .toolbar .sub{font-size:13px;color:var(--muted);margin-top:3px;line-height:1.5;}
-  .stale-note{display:inline-block;margin-left:8px;padding:2px 9px;border-radius:6px;font-weight:600;color:var(--amberink);background:var(--amberbg);border:1px solid var(--amberline);}
+  .data-note{padding:12px 16px;border-radius:10px;font-size:13.5px;line-height:1.5;font-weight:600;color:var(--amberink);background:var(--amberbg);border:1px solid var(--amberline);}
   .pill{font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--amberink);background:var(--amberbg);border:1px solid var(--amberline);border-radius:999px;padding:6px 11px;}
   /* banner */
   .banner{border-radius:14px;padding:16px 20px;display:flex;align-items:center;gap:16px;font-size:14.5px;}
@@ -181,8 +181,8 @@
     <table>
       <thead>
         <tr>
-          <th>DATE</th>
-          <th>TIME</th>
+          <th>POLL DATE</th>
+          <th>POLL TIME</th>
           <th>RAIN TODAY <span class="u">mm</span></th>
           <th>RAIN 24H <span class="u">mm</span></th>
           <th>RAIN PRIOR 2 DAYS <span class="u">mm &middot; decides status</span></th>
@@ -199,6 +199,9 @@
       <tbody id="tbody"></tbody>
     </table>
   </section>
+
+  <!-- Shown only when the server says the newest reading is older than the freshness limit -->
+  <div id="dataNote" class="data-note" style="display:none;"></div>
 
 </main>
 
@@ -361,6 +364,7 @@
       stale: reading.stale !== false,
       gaugeAgeHours: reading.gauge_age_hours,
       gaugeMeasured: formatDateTime(time),
+      checkedText: reading.retrieved_at ? formatDateTime(reading.retrieved_at) : null,
       cso: cso,
       rainToday: round1(rainToday),
       rain24: round1(rain24),
@@ -403,6 +407,7 @@
     if (rows.length === 0){
       b.style.background = '#F7F9F9';
       b.style.border = '1px solid #E4E9EA';
+      document.getElementById('dataNote').style.display = 'none';
       b.innerHTML = '<div style="color:var(--muted);">No readings yet &mdash; the first reading appears shortly after the server starts.</div>';
       document.getElementById('tbody').innerHTML = '';
       return;
@@ -433,16 +438,26 @@
       reasonClause +
       ' &middot; Center City reach &middot; '+latest.time+
       ' <span style="color:var(--faint);">&middot; Source: AquaSentinel estimate' +
-      (latest.rainSource ? '; rain from '+latest.rainSource : '') + '</span>' +
-      // The banner keeps showing the most recent reading; when the server says it is stale, say so
-      // right here (the status API still reports "unavailable" for it).
-      (latest.stale
-        ? '<span class="stale-note">The gauge is currently unavailable. ' +
-          // Only name the reading's time when the server could read it (age is null when it could not).
-          ((latest.gaugeAgeHours !== null && latest.gaugeAgeHours !== undefined) ? 'The latest reading is from '+latest.gaugeMeasured+'. ' : '') +
-          'Check back in an hour for a more recent status.</span>'
-        : '') +
-      '</div>';
+      (latest.rainSource ? '; rain from '+latest.rainSource : '') + '</span></div>';
+
+    // The note under the table. The banner keeps showing the most recent reading as-is; when the
+    // server says that reading is older than the freshness limit (the status API then reports
+    // "unavailable"), say plainly WHICH sensors went quiet and when. At this station the flow and
+    // stage sensors can keep reporting while the water-quality probe is silent, so "the gauge is
+    // unavailable" would mislead; and the table's TIME is when AquaSentinel last CHECKED, which
+    // is not when the sensors last reported, so both times are named.
+    var note = document.getElementById('dataNote');
+    if (latest.stale){
+      var reported = (latest.gaugeAgeHours !== null && latest.gaugeAgeHours !== undefined)
+        ? ' last reported on '+latest.gaugeMeasured
+        : ' have not reported recently';
+      note.textContent = "The water-quality sensors at the Penn's Landing gauge" + reported +
+        (latest.checkedText ? ', and AquaSentinel last checked on '+latest.checkedText : '') +
+        '. Check back in an hour for a more recent status.';
+      note.style.display = 'block';
+    } else {
+      note.style.display = 'none';
+    }
     document.getElementById('ruleThreshold').innerHTML = latest.ruleThreshold;
 
     // table
