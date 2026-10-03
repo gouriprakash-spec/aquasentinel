@@ -5,6 +5,28 @@ Values marked TODO(decide) are placeholders the docs explicitly say not to inven
 see docs/alert-rules-decisions.md, "Still open (to be derived, not decided)".
 """
 
+from pathlib import Path
+
+# --- Database location ---
+# On a deploy, point this at a persistent disk (e.g. /var/data/aquasentinel.db) so readings,
+# alert state and FHIR records survive restarts and redeploys. Unset = the repo-root default, so
+# local development and the tests behave exactly as before. Read once, at import time, by
+# app/db.py and app/fhir/store.py (they share one file).
+DB_PATH_ENV_VAR = "AQUASENTINEL_DB_PATH"
+
+
+def resolve_db_path(env_value: str | None) -> Path:
+    """The SQLite file's path: the env value if it is non-blank, else <repo root>/aquasentinel.db.
+
+    Surrounding whitespace is stripped because a value pasted into a dashboard field easily
+    picks up a stray space or newline.
+    """
+    value = (env_value or "").strip()
+    if value:
+        return Path(value)
+    return Path(__file__).resolve().parents[1] / "aquasentinel.db"
+
+
 # --- Safety classification (docs/product-brief.md, docs/alert-rules-decisions.md) ---
 UNSAFE_THRESHOLD_CFU_100ML = 235  # EPA single-sample max. The only tier boundary. No "Caution".
 GEOMEAN_THRESHOLD_CFU_100ML = 126  # EPA 30-day geometric-mean anchor. Context only, not an alert level.

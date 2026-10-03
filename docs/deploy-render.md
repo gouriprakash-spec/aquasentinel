@@ -55,6 +55,20 @@ creation. If it is wrong or missing the MCP endpoint answers `421 Invalid Host h
 full URL is skipped and a warning is logged. Not needed: `AQUASENTINEL_BASE_URL` and
 `RPHSA_BASE_URL` (see "What is not deployed").
 
+## 3b. Persistent disk (recommended for an unattended demo)
+Without a disk the SQLite file is wiped on every restart or redeploy, so the readings table drops
+back to one row. A disk keeps the readings, alert state and FHIR records.
+1. In the service: **Disks > Add Disk**. Name it anything, **Mount Path** `/var/data`, size **1 GB**
+   (about $0.25/GB per month; you can grow a disk later but never shrink it). Needs a paid instance.
+2. **Environment**: add `AQUASENTINEL_DB_PATH` = `/var/data/aquasentinel.db`.
+3. Save. Render redeploys. From then on the data survives restarts and redeploys.
+
+Trade-off (from Render's docs): a service with a disk cannot do zero-downtime deploys, so each
+redeploy has a brief outage while the old instance stops and the new one starts. That only happens
+when you push code or change a setting. Turn **Auto-Deploy off** before judging so nothing redeploys
+by accident. The app creates the database folder if it is missing, and uses the repo-root file when
+the variable is unset (local dev).
+
 ## 4. Verify the live service (replace HOST)
 ```
 curl -s https://HOST/api/status                      # a reading, or "unavailable" for ~10s after boot
@@ -87,5 +101,5 @@ Flag delivery locally in the video, with both processes running.
 
 ## Known limits to keep in mind
 - Pulls run at startup and on the hour; a tier change is detected at most hourly.
-- SQLite on an ephemeral disk: history resets on restart or redeploy (a paid disk would fix it).
+- SQLite without a disk (step 3b skipped): history resets on restart or redeploy.
 - Muse is untested; Claude is the primary demo assistant.

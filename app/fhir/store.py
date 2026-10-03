@@ -8,10 +8,14 @@ concerns stay in the app/fhir/ package.
 
 from __future__ import annotations
 
+import os
 import sqlite3
 from pathlib import Path
 
-DB_PATH = Path(__file__).resolve().parents[2] / "aquasentinel.db"
+from app import config
+
+# Same file as app/db.py's readings table, so it reads the same setting.
+DB_PATH = config.resolve_db_path(os.environ.get(config.DB_PATH_ENV_VAR))
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS fhir_subscriptions (
@@ -40,6 +44,7 @@ def _connect(db_path: Path | None = None) -> sqlite3.Connection:
 
 
 def init_db(db_path: Path | None = None) -> None:
+    Path(db_path if db_path is not None else DB_PATH).parent.mkdir(parents=True, exist_ok=True)
     with _connect(db_path) as conn:
         conn.executescript(_SCHEMA)
 

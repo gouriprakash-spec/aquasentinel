@@ -8,10 +8,14 @@ decision.
 
 from __future__ import annotations
 
+import os
 import sqlite3
 from pathlib import Path
 
-DB_PATH = Path(__file__).resolve().parents[1] / "aquasentinel.db"
+from app import config
+
+# Still a module-level name (tests patch it); its value comes from AQUASENTINEL_DB_PATH when set.
+DB_PATH = config.resolve_db_path(os.environ.get(config.DB_PATH_ENV_VAR))
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS readings (
@@ -78,6 +82,9 @@ _CSO_COLUMNS = [
 
 
 def init_db(db_path: Path | None = None) -> None:
+    # A freshly attached disk's mount folder exists, but a sub-folder under it may not - create
+    # it rather than crash on first start.
+    Path(db_path if db_path is not None else DB_PATH).parent.mkdir(parents=True, exist_ok=True)
     with _connect(db_path) as conn:
         conn.executescript(_SCHEMA)
         _migrate_cso_columns(conn)
