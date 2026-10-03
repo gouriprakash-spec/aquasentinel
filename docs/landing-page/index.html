@@ -438,9 +438,10 @@
       // The banner keeps showing the most recent reading; when the server says it is stale, say so
       // right here (the status API still reports "unavailable" for it).
       (latest.stale
-        ? '<span class="stale-note">Stale: the gauge last measured '+latest.gaugeMeasured +
-          ((latest.gaugeAgeHours !== null && latest.gaugeAgeHours !== undefined) ? ' ('+latest.gaugeAgeHours+' h ago)' : '') +
-          '</span>'
+        ? '<span class="stale-note">The gauge is currently unavailable. ' +
+          // Only name the reading's time when the server could read it (age is null when it could not).
+          ((latest.gaugeAgeHours !== null && latest.gaugeAgeHours !== undefined) ? 'The latest reading is from '+latest.gaugeMeasured+'. ' : '') +
+          'Check back in an hour for a more recent status.</span>'
         : '') +
       '</div>';
     document.getElementById('ruleThreshold').innerHTML = latest.ruleThreshold;

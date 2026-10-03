@@ -175,3 +175,16 @@ def test_the_dashboard_has_a_date_column_and_no_comment_column(monkeypatch, tmp_
     assert "<th>DATE</th>" in page
     assert "<th>COMMENT" not in page
     assert "stale-note" in page  # the banner's stale highlight exists
+
+
+def test_the_banner_note_uses_plain_cautious_wording_not_the_word_stale(monkeypatch, tmp_path):
+    """Gouri, 2026-10-03: say the gauge is unavailable and when to check back, rather than
+    "stale" - err on the side of caution, especially when the latest reading is Unsafe."""
+    client = _client(monkeypatch, tmp_path)
+
+    page = client.get("/").text
+
+    assert "The gauge is currently unavailable." in page
+    assert "Check back in an hour for a more recent status." in page
+    assert "Comments: the gauge last measured" not in page
+    assert "Stale: the gauge" not in page
