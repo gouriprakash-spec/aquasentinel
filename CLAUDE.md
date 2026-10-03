@@ -87,8 +87,9 @@ Oct 3-4 are reserved for the demo video, the public repo, and the submission tex
 - **USGS data gotcha:** each parameter's `values` array can hold several blocks. For temp,
   conductance, DO and pH the data were in the "ISM Test Bed (barge)" block, not `values[0]`.
   Select the non-empty block by method.
-- **Values not yet decided** (low-confidence cutoff, forecast threshold T, CSO outfall set) live
-  in config as clearly marked placeholders. Do not invent numbers for them.
+- **Values not yet decided** (forecast threshold T) live in config as a clearly marked
+  placeholder. Do not invent numbers for it. (The low-confidence cutoff was derived 2026-09-27 and
+  the CSO outfall set is the 5 km radius rule, both in `app/config.py`.)
 
 ## Core Operating Rules
 ### Never without explicit approval:
@@ -128,9 +129,8 @@ A task is done when:
    dashboard banner agree for the same reading
 
 ## Open Questions / Known Gaps
-- `.env.example` still has template placeholders; update it with the real variable names
-  (any model API key, plus `AQUASENTINEL_BASE_URL`/`RPHSA_BASE_URL` already added for Milestone 4)
-  before use.
+- `.env.example` lists the variables the app actually reads (cleaned 2026-10-03); there is no
+  model API key.
 - `PRD.md` (requirements) and `plan.md` (milestones, testing, rollout) are populated from `docs/`
   as of Sep 25, 2026. `docs/` stays the source of truth; if they drift, update them from `docs/`.
 - CSOcast: measured or modeled, update rate, machine-readable feed, and reuse terms all unverified.

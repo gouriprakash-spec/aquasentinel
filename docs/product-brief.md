@@ -192,8 +192,9 @@ Build for real:
 
 Demonstrated (planned, not yet tested):
 
-- An outside personal assistant (Meta's Muse, over WhatsApp) polling AquaSentinel's read-only MCP
-  server for the current reading. A person asks their assistant; AquaSentinel pushes nothing.
+- An outside AI assistant polling AquaSentinel's read-only MCP server for the current reading:
+  Claude, connected over MCP, is the primary plan; Meta's Muse only if access is available (untested).
+  A person asks their assistant; AquaSentinel pushes nothing.
 
 Cut from the build, designed only (see Future directions):
 

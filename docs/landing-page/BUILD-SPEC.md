@@ -2,8 +2,8 @@
 
 This folder is a **reference implementation** to hand to a coding agent. `index.html` is
 the real, standard-web version of the landing page (plain HTML/CSS/vanilla JS, no build
-step). It renders and runs as-is, but two behaviors are **mocked** and marked `TODO(real)`
-in the JS. This document says what to build for real.
+step). It was first handed over with two behaviors **mocked** (marked `TODO(real)`); both are
+real now (see `plan.md`). This document says what was to be built for real.
 
 ## Files
 - `index.html` — the page. Open it in a browser to see it work.

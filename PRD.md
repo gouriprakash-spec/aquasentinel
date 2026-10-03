@@ -141,8 +141,9 @@ Build order is top to bottom; see `plan.md` for the cut line.
   the agent cannot write a label.
 - Assumption: USGS `01467200` and NOAA `USW00013739` stay available at documented cadence (the
   gauge reports every 5 minutes, provisional) through the demo window.
-- Assumption: values not yet decided — the low-confidence cutoff, forecast threshold T, and the
-  CSO outfall set — stay clearly marked placeholders in config. We do not invent numbers.
+- Assumption: the one value still undecided, the forecast threshold T, stays a clearly marked
+  placeholder in config. We do not invent numbers. (The low-confidence cutoff and the CSO outfall
+  set were decided 2026-09-27 and 2026-10-01.)
 - Assumption: proxies (USGS) and labels (DRBC) joined by date, not co-located — a deliberate,
   disclosed choice; the two label stations bracket the gauge.
 

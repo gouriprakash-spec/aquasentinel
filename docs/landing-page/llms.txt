@@ -13,9 +13,18 @@ human-facing dashboard:
   get_recent_readings. No write tools exist - an agent can read status, never change
   anything.
 - [Status endpoint](/api/status) - the same data as a plain JSON GET, no MCP client needed.
-- [Methodology](TODO_GITHUB_REPO_URL/blob/main/docs/product-brief.md) - the full design:
+- [Methodology](https://github.com/gouriprakash-spec/aquasentinel/blob/main/docs/product-brief.md) - the full design:
   data sources, model, alert rules, and honesty guardrails.
 
-Every reading is an estimate from live proxies (turbidity, temperature, conductance,
-dissolved oxygen, rainfall), scored against the EPA 235 CFU/100mL single-sample threshold -
-never a measured bacteria value.
+How the status is decided (by deterministic code, never by an agent):
+- Safe/Unsafe comes from a disclosed rainfall rule: Unsafe when rain over the two previous
+  calendar days is at least 2.5 mm. A nearby combined-sewer overflow reported by CSOCast can also
+  force Unsafe; that check can only raise the status, never lower it.
+- Live USGS gauge readings (turbidity, temperature, conductance, dissolved oxygen, pH) feed a
+  model trained on past near-shore E. coli samples. The model never decides the status; it only
+  produces `confidence`, the agreement between the rule and the model. When the gauge has no
+  current reading, `confidence` and the water-quality values are null: read them as "not
+  available", never as zero. The status itself is still given.
+
+Every reading is an estimate that flags elevated risk of exceeding the EPA 235 CFU/100mL
+single-sample E. coli threshold - never a measured bacteria value.

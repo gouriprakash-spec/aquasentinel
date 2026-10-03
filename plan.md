@@ -36,7 +36,7 @@ Build top to bottom. If behind on Oct 1, **cut from the bottom, never the middle
    fallback (precision 0.372, recall 0.653) — no case for shipping a second, weaker ML model.
    Shipped model: precision 0.615, recall 0.533 (5-fold CV, 60 rows, 15 unsafe). Rules fallback
    threshold: 2.5mm prior-48h rain (`app/config.py:RAIN_FALLBACK_THRESHOLD_MM`). Low-confidence
-   cutoff still to be derived — not yet needed until the scoring job (milestone 2) calls the model.
+   cutoff: derived 2026-09-27 (`app/config.py:LOW_CONFIDENCE_CUTOFF`, see decision 6).
 
    **Amended 2026-09-27 (Milestone 1b).** The 0.615/0.533 figure above does not survive
    date-grouped cross-validation - Navy Yard and Ben Franklin Bridge share identical gauge/rain
@@ -219,8 +219,9 @@ Build top to bottom. If behind on Oct 1, **cut from the bottom, never the middle
 - Overclaiming → claim the design and one simulated loop turn, never a proven accuracy gain.
 
 ## Rollout
-- No production deploy. This is a hackathon prototype: the app runs locally (or on one small
-  host) with a stubbed RPHSA FHIR endpoint and a stubbed agency sampling inbox.
+- Deployed 2026-10-02/03 on Render (one instance with a persistent disk; see
+  `docs/deploy-render.md`), with a stubbed RPHSA FHIR endpoint that is run locally for the demo.
+  The agency sampling inbox was cut with Milestone 8. It is still a hackathon prototype.
 - No direct-to-public alerting exists or is planned (see the Overview's scope decision) — nothing
   to roll out on that front.
 - The repo is made **public** at submission: no tokens, phone numbers, or personal contact
@@ -241,10 +242,11 @@ Build top to bottom. If behind on Oct 1, **cut from the bottom, never the middle
   planned. Flagged here so it's a known, deliberate leftover, not silent dead code.
 - Run commands are not yet set up — fill in install / dev / test / lint in `CLAUDE.md` once the
   project is scaffolded.
-- `.env.example` still holds template placeholders; update it with the real variable names
-  (model API key, any others) before use.
+- ~~`.env.example` still holds template placeholders.~~ Resolved 2026-10-03: it lists only the
+  variables the app reads (there is no model API key).
 - CSOcast: measured or modeled, update rate, machine-readable feed, reuse terms.
-- Low-confidence cutoff and forecast threshold T — both to be *derived*, not chosen.
+- ~~Low-confidence cutoff~~ derived 2026-09-27 (0.7467). Forecast threshold T is still to be
+  *derived*, not chosen.
 - Which FHIR approach: a resource library or hand-built JSON validated against the OAH IG
   profiles.
 - `app/mcp_server.py`'s `TransportSecuritySettings` allowlist only covers `testserver`/
@@ -252,5 +254,5 @@ Build top to bottom. If behind on Oct 1, **cut from the bottom, never the middle
   no real deploy host is chosen yet (see the `deployment_target` decision). Once one is, add
   its real hostname to both `allowed_hosts` and `allowed_origins` and update this line to say
   it's done.
-- `docs/landing-page/llms.txt`'s `TODO_GITHUB_REPO_URL` placeholder needs the real public repo
-  URL before submission (the repo isn't public yet, so the real URL doesn't exist).
+- ~~`docs/landing-page/llms.txt`'s `TODO_GITHUB_REPO_URL` placeholder.~~ Filled in 2026-10-03 with
+  the GitHub repo URL; the link only works once the repo is public.

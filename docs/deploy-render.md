@@ -1,6 +1,7 @@
 # Deploying AquaSentinel to Render — checklist
 
-Status: written 2026-10-02, **not yet run**. Render facts below come from Render's own docs
+Status: written 2026-10-02 and run since; the service is live at **https://aquasentinel-prc9.onrender.com**
+(answering as of 2026-10-03). Render facts below come from Render's own docs
 (render.com/docs/free, /python-version, /web-services, /deploy-fastapi), checked that day;
 re-check anything that costs money. Nothing here is a secret — the only environment variable is
 your public hostname.
@@ -50,9 +51,11 @@ command above does both.
 |---|---|
 | `AQUASENTINEL_ALLOWED_HOSTS` | your bare hostname, e.g. `aquasentinel.onrender.com` — **no** `https://`, no path |
 
-The hostname is `<service name>.onrender.com`, so pick the service name first and set this at
-creation. If it is wrong or missing the MCP endpoint answers `421 Invalid Host header`. A pasted
-full URL is skipped and a warning is logged. Not needed: `AQUASENTINEL_BASE_URL` and
+**Lesson learned:** the hostname is not always `<service name>.onrender.com`. Render can add a
+random suffix: our service is named `aquasentinel` but its hostname is `aquasentinel-prc9.onrender.com`.
+So create the service first, then copy the exact hostname Render shows for it and use that value
+(here `AQUASENTINEL_ALLOWED_HOSTS=aquasentinel-prc9.onrender.com`). If it is wrong or missing the MCP
+endpoint answers `421 Invalid Host header`. A pasted full URL is skipped and a warning is logged. Not needed: `AQUASENTINEL_BASE_URL` and
 `RPHSA_BASE_URL` (see "What is not deployed").
 
 ## 3b. Persistent disk (recommended for an unattended demo)
@@ -103,5 +106,8 @@ Flag delivery locally in the video, with both processes running.
 - Pulls run at the top of every hour and NOT at startup (amended 2026-10-03; readings persist on the disk, so a
   restart or deploy keeps the latest stored reading). A tier change is detected at most hourly, and nothing
   forces a refresh on demand. On a brand-new, empty database there is no reading until the first top of the hour.
+- If the USGS water-quality sensors go quiet (as on 2026-10-03), pulls still record a row: the tier
+  comes from rainfall and sewer overflow, and the water-quality columns and rule/model agreement read
+  "n/a". Missing rainfall data still records nothing, and the status then goes "unavailable".
 - SQLite without a disk (step 3b skipped): history resets on restart or redeploy.
 - Muse is untested; Claude is the primary demo assistant.
