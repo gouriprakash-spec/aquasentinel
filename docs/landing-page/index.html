@@ -64,7 +64,8 @@
   .brand h1{margin:0;font-size:32px;letter-spacing:-0.02em;}
   .brand .tag{font-size:13.5px;color:var(--teal);font-weight:500;margin-top:2px;}
   .statement{font-size:15.5px;color:#33454E;line-height:1.6;margin-top:20px;}
-  .chips{margin-top:auto;padding-top:20px;display:flex;gap:10px;flex-wrap:wrap;}
+  .chips{margin-top:auto;padding-top:12px;display:flex;gap:10px;flex-wrap:wrap;}
+  .chips-label{flex-basis:100%;font-size:12.5px;font-weight:600;color:var(--muted);margin-bottom:-2px;}
   .chip{font-size:12.5px;color:var(--teal);background:var(--tealsoft);border-radius:8px;padding:7px 12px;}
   .map{overflow:hidden;display:flex;flex-direction:column;}
   .map .maphead{padding:16px 20px 0;display:flex;justify-content:space-between;align-items:center;}
@@ -104,10 +105,6 @@
      third of the card). The card - and the intro card beside it - grow to fit. */
   .mapbox{position:relative;flex:1;min-height:520px;}
   @media (max-width:860px){ .hero{flex-direction:column;} .mapbox{min-height:420px;} }
-  /* The script crops the map to Ardmore-Woodbury, which makes the map card shorter than the intro card;
-     align to the top so it is not stretched back to the intro card's height. (Desktop only: in the
-     stacked phone layout the cross axis is the width.) */
-  @media (min-width:861px){ .hero{align-items:flex-start;} }
 </style>
 </head>
 <body>
@@ -132,21 +129,18 @@
       </p>
       <div class="sub">Each pull reads live data from the <strong>USGS Penn's Landing gauge (01467200)</strong>
         and the <strong>PHL weather station</strong> (or the Open-Meteo weather model when the
-        station's rain record is incomplete), then estimates how safe the Center City tidal
-        Delaware reach is for recreation right now.</div>
+        station's rain record is incomplete).</div>
       <div class="sub" id="methodology"><strong>How the status is decided:</strong> a disclosed
         rainfall rule, not a model. The reach is flagged <strong>Unsafe</strong> when rain over the
-        <strong>two previous calendar days</strong> (a 48-hour window, midnight to midnight, the
-        same window the rule was derived on) is at least
-        <strong><span id="ruleThreshold">the rule threshold</span> mm</strong>. A model trained on
-        past DRBC E. coli samples taken near shore at Penn's Landing runs alongside it;
-        &ldquo;rule/model agreement&rdquo; shows how strongly that model agrees with the rule, and
-        is not the model's own verdict. A nearby, fresh, actively or recently overflowing
-        combined-sewer outfall can also force the reach <strong>Unsafe</strong>, overriding the
-        rainfall rule &mdash; the banner then names the outfall instead of showing the rain
-        amount. Ben Franklin Bridge and Navy Yard are DRBC channel
+        <strong>two previous calendar days</strong> (48 hours, midnight to midnight) is at least
+        <strong><span id="ruleThreshold">the rule threshold</span> mm</strong>. A nearby combined-sewer
+        outfall reporting an overflow (now or in the past 72 hours) can also force
+        <strong>Unsafe</strong>; the banner then names the outfall. A model trained on past DRBC E. coli
+        samples runs alongside; &ldquo;rule/model agreement&rdquo; shows how strongly it agrees with the
+        rule, and is not the model's own verdict. Ben Franklin Bridge and Navy Yard are DRBC channel
         stations, shown for context.</div>
       <div class="chips">
+        <div class="chips-label">Data Sources:</div>
         <span class="chip">USGS gauge 01467200</span>
         <span class="chip">Live weather station</span>
         <span class="chip">DRBC E. coli labels</span>

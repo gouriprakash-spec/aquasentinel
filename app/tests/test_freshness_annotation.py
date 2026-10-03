@@ -333,8 +333,8 @@ def test_the_map_is_framed_without_animation_so_a_second_framing_is_never_droppe
 def test_the_map_is_cropped_to_run_from_ardmore_to_woodbury(monkeypatch, tmp_path):
     """Gouri, 2026-10-03: the map showed a lot of land north of Ardmore and south of Woodbury that
     is not relevant. The page sizes the map frame so its top edge is Ardmore (plus a small margin)
-    and its bottom edge Woodbury, and centres the view between them. The desktop cards then align to
-    the top so the shorter map card is not stretched back to the intro card's height."""
+    and its bottom edge Woodbury, and centres the view between them. (The intro card's text is kept short
+    enough that the two cards are the same height; they are not top-aligned.)"""
     client = _client(monkeypatch, tmp_path)
 
     page = client.get("/").text
@@ -342,4 +342,17 @@ def test_the_map_is_cropped_to_run_from_ardmore_to_woodbury(monkeypatch, tmp_pat
     assert "ARDMORE_LAT" in page and "WOODBURY_LAT" in page
     assert "40.0068" in page and "39.8384" in page
     assert "map.project(" in page  # the frame height comes from the actual zoom, not a fixed number
-    assert "@media (min-width:861px){ .hero{align-items:flex-start;} }" in page
+    assert "align-items:flex-start" not in page  # same-height cards: the default stretch applies
+
+
+def test_the_tags_in_the_intro_card_are_labelled_data_sources(monkeypatch, tmp_path):
+    """Gouri, 2026-10-03: the tags at the bottom of the intro card are the data sources, and a small
+    "Data Sources:" label sits directly above them, inside the same bottom-pinned block."""
+    client = _client(monkeypatch, tmp_path)
+
+    page = client.get("/").text
+
+    chips = page.index('<div class="chips">')
+    label = page.index("Data Sources:")
+    first_chip = page.index('<span class="chip">', chips)
+    assert chips < label < first_chip
