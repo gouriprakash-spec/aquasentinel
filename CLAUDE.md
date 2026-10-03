@@ -45,7 +45,7 @@ If a conflict remains, stop and ask.
 - Test: `./venv/bin/python -m pytest app/tests/`
 - Dev server: `./venv/bin/uvicorn app.server:app --reload` (serves the dashboard at `/` and the
   read-only API at `/api/status`, `/api/readings`; a scheduled job pulls a live reading at
-  startup and on the hour. There is no public pull route or button - removed 2026-10-02 so no
+  the top of every hour, not at startup. There is no public pull route or button - removed 2026-10-02 so no
   visitor can trigger live requests to USGS/NWS)
 - RPHSA stub (Milestone 4 demo, fictional agency receiver): `./venv/bin/uvicorn
   app.rphsa_stub:app --port 8001 --reload` (run alongside the main dev server so it can

@@ -1,7 +1,7 @@
 """FastAPI app: serves the dashboard and the read-only status API.
 
 A scheduled job (app/scheduler.py, started in this module's lifespan) runs
-app/scoring/pull_reading.py (real USGS + NWS + model) at startup and on the hour and stores
+app/scoring/pull_reading.py (real USGS + NWS + model) at the top of every hour (not at startup) and stores
 the result; the dashboard that docs/landing-page/index.html renders, /api/status and the MCP
 server only read what is stored. Per CLAUDE.md, the front end stays framework-free - this
 only serves the existing page and answers its fetches; the page itself is not rewritten as
@@ -40,7 +40,7 @@ DATASET_DATE_MODIFIED_TOKEN = "__AQUASENTINEL_DATASET_DATE_MODIFIED__"
 logger = logging.getLogger(__name__)
 
 # A module flag (not just config) so a test that runs the real lifespan can switch the timer
-# off and avoid a live USGS call at startup. Production leaves it True.
+# off in tests that run the real lifespan. Production leaves it True.
 SCHEDULER_ENABLED = True
 
 

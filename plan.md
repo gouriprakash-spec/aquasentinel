@@ -63,7 +63,7 @@ Build top to bottom. If behind on Oct 1, **cut from the bottom, never the middle
    the public `POST /api/pull-reading` route, the page's "Pull latest reading" button and its
    automatic on-open/hourly pulls were removed - anyone on the internet could trigger about six
    live requests per call and risk a rate-limit block from USGS/NWS. A scheduled job
-   (`app/scheduler.py`) now runs `pull_reading()` at startup and on the hour; the page only reads
+   (`app/scheduler.py`) now runs `pull_reading()` at the top of every hour (not at startup, per Gouri 2026-10-03: readings persist on the disk); the page only reads
    stored readings (`GET /api/readings`). Original (pre-removal) verification: in a real
    browser (Playwright): live pull renders correctly, and a real USGS 503 (rate-limited during
    testing) correctly failed closed - no fake reading shown, error surfaced in the UI. 31 passing
@@ -227,8 +227,8 @@ Build top to bottom. If behind on Oct 1, **cut from the bottom, never the middle
 
 ## Open Questions
 - ~~No server-side scheduled job exists yet.~~ Resolved 2026-10-02: `app/scheduler.py` runs the
-  pull (and with it Milestone 3's gating and Milestone 4's FHIR delivery) at startup and at the
-  top of every hour, inside the app process. It is now the ONLY thing that fetches; the public
+  pull (and with it Milestone 3's gating and Milestone 4's FHIR delivery) at the top of every hour
+  (NOT at startup - amended 2026-10-03), inside the app process. It is now the ONLY thing that fetches; the public
   pull route and button were removed. Known consequences: a tier change is detected at most
   hourly; and if the host sleeps idle instances (some free tiers do), the timer sleeps with it,
   so the instance must stay running.

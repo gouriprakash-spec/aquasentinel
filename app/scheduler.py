@@ -1,5 +1,5 @@
-"""A minimal in-process scheduler: run one job now, then again at every wall-clock boundary
-(for an hourly interval, at the top of each hour: 13:00, 14:00, ...).
+"""A minimal in-process scheduler: run a job at every wall-clock boundary (for an hourly
+interval, at the top of each hour: 13:00, 14:00, ...). It does NOT run the job at startup.
 
 Why in-process and not a Render cron job: a cron job runs as a separate process with its own
 disk, so it could not write to the web service's SQLite file. Running inside the app
@@ -56,16 +56,18 @@ async def run_on_the_hour(
     clock: Callable[[], datetime] = _utc_now,
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
 ) -> None:
-    """Run `job` immediately, then at every wall-clock multiple of `interval_seconds`, until
-    cancelled. (`clock` and `sleep` are injectable only so tests need not really wait.)
+    """Run `job` at every wall-clock multiple of `interval_seconds`, until cancelled. (`clock` and
+    `sleep` are injectable only so tests need not really wait.)
 
-    Runs immediately so a fresh deploy or a restart has a reading without waiting up to a full
-    interval. The job is blocking (HTTP calls, SQLite), so it runs in a worker thread - inline
-    it would stall the whole event loop, including the dashboard and the MCP endpoint. The next
-    boundary is worked out after the job finishes, so a slow job never pushes later runs off
-    the hour.
+    Deliberately NOT at startup (Gouri, 2026-10-03): the readings live on a persistent disk, so a
+    restart or a deploy keeps the latest stored reading instead of fetching a new one. The
+    trade-off: on a brand-new, empty database there is no reading until the first top of the hour.
+    The job is blocking (HTTP calls, SQLite), so it runs in a worker thread - inline it would
+    stall the whole event loop, including the dashboard and the MCP endpoint. The next boundary is
+    worked out after the job finishes, so a slow job never pushes later runs off the hour.
     """
     while True:
+        await _sleep_until_next_boundary(interval_seconds, clock, sleep)
         try:
             await asyncio.to_thread(job)
         except Exception:
@@ -73,4 +75,3 @@ async def run_on_the_hour(
             # stop all future pulls, which is worse than one logged failure. (CancelledError
             # is not an Exception subclass, so cancelling the task still stops it.)
             logger.exception("Scheduled job raised; will retry at the next boundary")
-        await _sleep_until_next_boundary(interval_seconds, clock, sleep)

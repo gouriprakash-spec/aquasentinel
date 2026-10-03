@@ -52,7 +52,7 @@ RECREATION_SEASON_END = (10, 31)  # app/alerts/gating.py still computes (current
 # "unavailable". Without a scheduled pull, /api/status and MCP only ever see a reading when
 # someone happens to open the dashboard.
 # Pulls run on the wall clock at multiples of this interval (60 -> the top of every hour:
-# 13:00, 14:00, ...), plus once at startup so a fresh deploy or restart has a reading.
+# 13:00, 14:00, ...). NOT at startup (Gouri, 2026-10-03): readings persist on the disk across restarts.
 SCHEDULED_PULL_INTERVAL_MINUTES = 60
 
 # --- Rules fallback (derived from AquaSentinel-dataset, not invented) ---

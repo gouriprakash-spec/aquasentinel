@@ -9,7 +9,7 @@
   vanilla JS, no build step. Framework-free on purpose per CLAUDE.md.
 
   The readings are REAL: a scheduled job on the server (app/scheduler.py) runs
-  app/scoring/pull_reading.py at startup and on the hour - live USGS 01467200 + NWS KPHL
+  app/scoring/pull_reading.py at the top of every hour (not at startup) - live USGS 01467200 + NWS KPHL
   rainfall, scored by the trained model, with the Safe/Unsafe tier decided by deterministic
   code - and stores each result. This page only READS what is stored (GET /api/readings). It
   has no pull button and calls no pull endpoint, by design (2026-10-02): a public button
@@ -68,7 +68,7 @@
   .chip{font-size:12.5px;color:var(--teal);background:var(--tealsoft);border-radius:8px;padding:7px 12px;}
   .map{overflow:hidden;display:flex;flex-direction:column;}
   .map .maphead{padding:16px 20px 0;display:flex;justify-content:space-between;align-items:center;}
-  .map #reachMap{width:100%;height:100%;background:var(--tealsoft);font-family:'IBM Plex Sans',sans-serif;}
+  .map #reachMap{position:absolute;inset:0;width:100%;height:100%;background:var(--tealsoft);font-family:'IBM Plex Sans',sans-serif;}
   .map .leaflet-tooltip.reach-label{background:#fff;border:1px solid var(--line);border-radius:8px;padding:4px 9px;font-size:11px;font-weight:600;color:var(--ink);box-shadow:none;white-space:nowrap;}
   .map .leaflet-tooltip.reach-label::before{border-right-color:var(--line);}
   .legend{display:flex;gap:18px;flex-wrap:wrap;padding:10px 20px;border-top:1px solid #EEF1F2;}
@@ -100,7 +100,10 @@
   tbody tr{border-bottom:1px solid #EEF1F2;}
   td.est{color:var(--ink);font-weight:600;}
   .status{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;font-weight:600;border-radius:999px;padding:5px 12px;}
-  @media (max-width:860px){ .hero{flex-direction:column;} }
+  /* The map frame gets real height (it used to sit at a 220px floor, so the two legends were a
+     third of the card). The card - and the intro card beside it - grow to fit. */
+  .mapbox{position:relative;flex:1;min-height:520px;}
+  @media (max-width:860px){ .hero{flex-direction:column;} .mapbox{min-height:420px;} }
 </style>
 </head>
 <body>
@@ -136,7 +139,7 @@
         <div class="disp" style="font-size:15px;font-weight:600;">Philadelphia, PA &middot; monitored reach</div>
         <span style="font-size:11px;color:var(--faint);">real coordinates &middot; USGS + EPA WQP</span>
       </div>
-      <div style="flex:1;min-height:220px;">
+      <div class="mapbox">
         <div id="reachMap"></div>
       </div>
       <div class="legend">
@@ -248,7 +251,11 @@
     // honestly rather than hiding it by zooming in on just the river cluster. Extra left
     // padding makes room for the weather station's tooltip, which extends leftward since
     // it's the westernmost marker.
-    map.fitBounds(bounds, { paddingTopLeft: [170, 20], paddingBottomRight: [140, 20] });
+    // That padding is for desktop. On a phone-width map 170+140px of label room would leave almost
+    // no map at all and the view would zoom out across half the Northeast, so use a small even
+    // padding there (the station labels may sit close together; the map stays usable).
+    var narrowMap = map.getSize().x < 600;
+    map.fitBounds(bounds, narrowMap ? { padding: [30, 30] } : { paddingTopLeft: [170, 20], paddingBottomRight: [140, 20] });
 
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
       maxZoom: 18,
@@ -419,7 +426,7 @@
       b.style.background = '#F7F9F9';
       b.style.border = '1px solid #E4E9EA';
       document.getElementById('dataNote').style.display = 'none';
-      b.innerHTML = '<div style="color:var(--muted);">No readings yet &mdash; the first reading appears shortly after the server starts.</div>';
+      b.innerHTML = '<div style="color:var(--muted);">No readings yet &mdash; the first reading appears at the next hourly pull.</div>';
       document.getElementById('tbody').innerHTML = '';
       return;
     }

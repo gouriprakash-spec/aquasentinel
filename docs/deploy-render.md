@@ -15,9 +15,9 @@ What that means for AquaSentinel:
 - The hourly scheduler runs inside the app, so it sleeps when the service sleeps. After 2 hours
   without a pull, the status becomes "unavailable" (fail closed, by design).
 - The SQLite database lives on that filesystem, so every spin-down wipes the stored readings,
-  alert state and FHIR Subscription. The startup pull restores one reading within seconds of boot.
+  alert state and FHIR Subscription, and there is no startup pull to refill them: the next reading arrives at the top of the hour.
 - Right after a wake-up, the first request to `/mcp` or `/api/status` can be slow, or say
-  "no readings yet" until the startup pull finishes.
+  "no readings yet" until the next top-of-the-hour pull (there is no startup pull).
 
 Recommendation: a free instance is fine for a first test of the deploy. For recording the demo and
 for judging (Oct 5-15), use a **paid always-on instance**. Price not verified — check Render's
@@ -100,6 +100,8 @@ exists on the deployed app, so FHIR delivery is a quiet no-op there. Show the FH
 Flag delivery locally in the video, with both processes running.
 
 ## Known limits to keep in mind
-- Pulls run at startup and on the hour; a tier change is detected at most hourly.
+- Pulls run at the top of every hour and NOT at startup (amended 2026-10-03; readings persist on the disk, so a
+  restart or deploy keeps the latest stored reading). A tier change is detected at most hourly, and nothing
+  forces a refresh on demand. On a brand-new, empty database there is no reading until the first top of the hour.
 - SQLite without a disk (step 3b skipped): history resets on restart or redeploy.
 - Muse is untested; Claude is the primary demo assistant.

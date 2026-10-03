@@ -239,3 +239,44 @@ def test_the_most_recent_row_is_highlighted_light_blue_not_green(monkeypatch, tm
 
     assert "background:#EAF3FB;" in page  # light blue
     assert "#F3FAF7" not in page  # the old green
+
+
+def test_the_map_gets_real_height_so_the_legends_do_not_dominate_the_card(monkeypatch, tmp_path):
+    """Gouri, 2026-10-03: the two legends took about a third of the map card because the map was
+    pinned at its 220px minimum. The map area must be tall (the table may move down)."""
+    import re
+
+    client = _client(monkeypatch, tmp_path)
+    page = client.get("/").text
+
+    desktop = int(re.search(r"\.mapbox\{position:relative;flex:1;min-height:(\d+)px;\}", page).group(1))
+    phone = int(re.search(r"@media \(max-width:860px\)\{.*?\.mapbox\{min-height:(\d+)px;\}", page, re.S).group(1))
+
+    assert 'class="mapbox"' in page
+    assert desktop >= 480
+    assert phone >= 360
+
+
+def test_the_map_fills_its_frame_in_every_layout_not_just_when_the_parent_has_a_fixed_height(monkeypatch, tmp_path):
+    """On a phone the cards stack and the frame only has a MIN height, so a percentage height on
+    the map resolved to 0 and the map vanished. The map is positioned to fill its frame instead."""
+    import re
+
+    client = _client(monkeypatch, tmp_path)
+    page = client.get("/").text
+
+    rule = re.search(r"\.map #reachMap\{([^}]*)\}", page).group(1)
+
+    assert "position:absolute" in rule
+    assert "inset:0" in rule
+
+
+def test_the_map_framing_does_not_reserve_label_space_that_a_phone_does_not_have(monkeypatch, tmp_path):
+    """The framing reserves 170px left + 140px right for the station labels; on a 325px-wide phone
+    map that left ~15px for the map itself, so it zoomed out across half the Northeast."""
+    client = _client(monkeypatch, tmp_path)
+
+    page = client.get("/").text
+
+    assert "map.getSize().x < 600" in page
+    assert "padding: [30, 30]" in page
