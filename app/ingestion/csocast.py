@@ -35,6 +35,10 @@ class OutfallReading(NamedTuple):
     status: int  # CSOcast's own code: 0 no data, 1 no overflow (72h), 3 overflow (72h), 4 active
     distance_km: float
     last_poll: datetime  # tz-aware UTC
+    # Kept so the dashboard map can draw the outfall. Optional so a caller that has no use for
+    # them (tests of the rule, for instance) need not supply them.
+    latitude: float | None = None
+    longitude: float | None = None
 
 
 class CsoDataUnavailable(RuntimeError):
@@ -113,7 +117,10 @@ def _fetch_and_filter(client: httpx.Client, now: datetime) -> list[OutfallReadin
             continue
 
         nearby.append(
-            OutfallReading(name=name, status=status, distance_km=distance_km, last_poll=last_poll)
+            OutfallReading(
+                name=name, status=status, distance_km=distance_km, last_poll=last_poll,
+                latitude=lat, longitude=lon,
+            )
         )
 
     return nearby

@@ -174,3 +174,12 @@ def test_excludes_an_outfall_with_a_future_last_poll_instead_of_treating_it_as_f
     result = fetch_nearby_outfalls(client=_client_for([feature]), now=NOW)
 
     assert result == []
+
+
+def test_outfalls_carry_their_coordinates_so_the_map_can_draw_them():
+    features = [_feature("D_near", status=3, km_from_penns_landing=1.0, age_hours=0.5)]
+
+    result = fetch_nearby_outfalls(client=_client_for(features), now=NOW)
+
+    assert result[0].latitude == pytest.approx(_offset_lat(1.0))
+    assert result[0].longitude == pytest.approx(config.LOCATION_LON)

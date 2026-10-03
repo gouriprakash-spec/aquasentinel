@@ -140,7 +140,12 @@ the **same scoring output** as the banner and table; never compute status twice.
    schema.org type specific to water-safety advisories, so do not invent one here.
 5. **Consistency test** — one test asserts that the MCP tool output, `/api/status`, and the
    rendered banner report the same tier and timestamp for the same reading.
-6. **Not in scope:** WebMCP (W3C community-group draft, Sep 2026; browser-bound).
+6. **Map outfalls** (added 2026-10-03) — `GET /api/outfalls` serves the snapshot of the sewer outfalls the
+   overflow rule considered at the last scheduled pull (Delaware-side, within `CSO_NEARBY_RADIUS_KM`, fresh
+   data), with coordinates, CSOcast status, a plain-language `status_text`, and `triggering` for the outfall
+   that decided the newest reading. Read-only; saved by the hourly pull (table `cso_outfalls`). The page
+   draws it on the map and never calls CSOcast itself. A feed outage keeps the previous snapshot.
+7. **Not in scope:** WebMCP (W3C community-group draft, Sep 2026; browser-bound).
 
 How the Advisory Reader Agent consumes sources (for the separate agent build): prefer a
 source's MCP server, then a structured feed advertised in `llms.txt`, then the HTML page

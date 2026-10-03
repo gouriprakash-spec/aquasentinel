@@ -213,3 +213,29 @@ def test_the_date_column_is_headed_poll_date_to_match_poll_time(monkeypatch, tmp
 
     assert "<th>POLL DATE</th>" in page
     assert "<th>DATE</th>" not in page
+
+
+def test_the_note_is_plain_italic_text_not_a_highlighted_strip(monkeypatch, tmp_path):
+    """Gouri, 2026-10-03: show the note under the table as plain italic text - no yellow
+    background, border or box."""
+    import re
+
+    client = _client(monkeypatch, tmp_path)
+    page = client.get("/").text
+
+    rule = re.search(r"\.data-note\{([^}]*)\}", page).group(1)
+
+    assert "font-style:italic" in rule
+    assert "background" not in rule
+    assert "border" not in rule
+    assert "amber" not in rule
+
+
+def test_the_most_recent_row_is_highlighted_light_blue_not_green(monkeypatch, tmp_path):
+    """Gouri, 2026-10-03: the newest table row's highlight changes from green to light blue."""
+    client = _client(monkeypatch, tmp_path)
+
+    page = client.get("/").text
+
+    assert "background:#EAF3FB;" in page  # light blue
+    assert "#F3FAF7" not in page  # the old green

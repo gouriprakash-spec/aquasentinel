@@ -32,7 +32,7 @@ from app.fhir import store as fhir_store
 from app.ingestion.nws import RainfallUnavailable
 from app.ingestion.usgs import UsgsDataUnavailable
 from app.scoring.pull_reading import LOCATION_ID, pull_reading
-from app.status import annotate_freshness, current_status
+from app.status import CSO_STATUS_TEXT, annotate_freshness, current_status
 
 LANDING_PAGE_DIR = Path(__file__).resolve().parents[1] / "docs" / "landing-page"
 DATASET_DATE_MODIFIED_TOKEN = "__AQUASENTINEL_DATASET_DATE_MODIFIED__"
@@ -54,6 +54,9 @@ def _pull_and_publish() -> dict:
     # save_reading keeps one row per gauge reading; gating and FHIR below still run on EVERY
     # pull, so a tier change inside one gauge window is never swallowed by the update.
     db.save_reading(reading)
+    outfalls = reading["evidence"].get("cso_outfalls")
+    if outfalls is not None:  # None = the feed could not be read: keep the previous snapshot
+        db.save_cso_outfalls(outfalls, snapshot_at=reading["retrieved_at"])
     decision = evaluate_reading(reading)
     fhir_emit.emit_event(reading, decision)
     return reading
@@ -121,6 +124,20 @@ def api_readings(limit: int = 9) -> list[dict]:
     carries `gauge_age_hours` and `stale` (see app.status.annotate_freshness), so the page can
     flag a stale reading without knowing the freshness limit itself."""
     return annotate_freshness(db.get_recent_readings(limit=limit))
+
+
+@app.get("/api/outfalls")
+def api_outfalls() -> dict:
+    """The sewer outfalls the overflow rule considered at the last scheduled pull, for the
+    dashboard map. Read-only, served from the saved snapshot: a visitor never triggers an
+    outside call. `triggering` marks the outfall that decided the newest reading, if any."""
+    snapshot = db.get_cso_outfalls()
+    newest = db.get_recent_readings(limit=1)
+    triggering_name = newest[0]["cso_outfall_name"] if newest else None
+    for outfall in snapshot["outfalls"]:
+        outfall["status_text"] = CSO_STATUS_TEXT.get(outfall["status"], f"Status {outfall['status']}")
+        outfall["triggering"] = outfall["name"] == triggering_name
+    return snapshot
 
 
 @app.get("/api/status")

@@ -89,6 +89,17 @@ def current_status(row: dict | None) -> dict:
     return build_status_contract(row)
 
 
+# CSOcast's own status codes in plain language, for the dashboard map. Display only - the
+# overflow rule itself works from the codes (config.CSO_TRIGGER_STATUSES). An unknown code is
+# shown as such, never mapped to something reassuring.
+CSO_STATUS_TEXT = {
+    0: "No data",
+    1: "No overflow in the past 72 hours",
+    3: "Overflow in the past 72 hours",
+    4: "Overflowing now",
+}
+
+
 def _parse_utc(value: str) -> datetime:
     parsed = datetime.fromisoformat(value)
     return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)

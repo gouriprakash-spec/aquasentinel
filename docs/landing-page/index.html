@@ -79,7 +79,7 @@
   /* toolbar */
   .toolbar{display:flex;align-items:center;justify-content:space-between;gap:20px;}
   .toolbar .sub{font-size:13px;color:var(--muted);margin-top:3px;line-height:1.5;}
-  .data-note{padding:12px 16px;border-radius:10px;font-size:13.5px;line-height:1.5;font-weight:600;color:var(--amberink);background:var(--amberbg);border:1px solid var(--amberline);}
+  .data-note{font-size:13.5px;line-height:1.5;font-style:italic;color:var(--muted);}
   .pill{font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--amberink);background:var(--amberbg);border:1px solid var(--amberline);border-radius:999px;padding:6px 11px;}
   /* banner */
   .banner{border-radius:14px;padding:16px 20px;display:flex;align-items:center;gap:16px;font-size:14.5px;}
@@ -144,6 +144,15 @@
         <span><span style="width:13px;height:13px;border:2.4px solid #B02D1E;border-radius:50%;display:inline-block;"></span>DRBC lab station</span>
         <span><span style="width:13px;height:13px;background:#4A9CBF;border-radius:50%;display:inline-block;"></span>Weather station (NWS)</span>
         <span><span style="width:16px;height:6px;background:#E7A79E;border-radius:3px;display:inline-block;"></span>Monitored reach &middot; alert</span>
+      </div>
+      <div class="legend" id="outfallLegend" style="display:none;">
+        <span style="font-weight:600;">Sewer outfalls (PWD CSOcast)</span>
+        <span><span style="width:11px;height:11px;background:#B02D1E;border-radius:50%;display:inline-block;"></span>Overflowing now</span>
+        <span><span style="width:11px;height:11px;background:#E5A100;border-radius:50%;display:inline-block;"></span>Overflow in past 72 h</span>
+        <span><span style="width:11px;height:11px;background:#3A9D6E;border-radius:50%;display:inline-block;"></span>No overflow</span>
+        <span><span style="width:11px;height:11px;background:#AEB8BC;border-radius:50%;display:inline-block;"></span>No data</span>
+        <span><span style="width:13px;height:13px;border:2.4px solid #1B2A2F;border-radius:50%;display:inline-block;"></span>Decided the current status</span>
+        <span id="outfallAsOf" style="font-style:italic;"></span>
       </div>
     </div>
   </section>
@@ -279,6 +288,8 @@
       // immediately to its northeast, so the two don't overlap.
       permanent: true, direction: 'left', className: 'reach-label', offset: [-9, 0]
     });
+
+    window.reachMap = map;  // the outfall layer (below) is added once its data has loaded
   }
 
   initReachMap();
@@ -465,7 +476,7 @@
     for (var i=0;i<rows.length;i++){
       var r = rows[i];
       var st = statusStyle(r.status === "Unsafe");
-      var rowbg = (i===0) ? 'background:#F3FAF7;' : '';
+      var rowbg = (i===0) ? 'background:#EAF3FB;' : '';  // newest row: light blue
       html +=
         '<tr style="'+rowbg+'">' +
         '<td class="mono" style="white-space:nowrap;">'+r.date+'</td>' +
@@ -487,11 +498,57 @@
     document.getElementById('tbody').innerHTML = html;
   }
 
+  // ---- sewer outfalls on the map ----
+  // Colors follow CSOcast's own status codes. "No data" is grey on purpose: an outfall with no
+  // data is never drawn as if it were clear.
+  var OUTFALL_COLORS = { 4: '#B02D1E', 3: '#E5A100', 1: '#3A9D6E', 0: '#AEB8BC' };
+  var outfallLayer = null;
+
+  function loadOutfalls(){
+    fetch('/api/outfalls')
+      .then(function(r){ return r.json(); })
+      .then(function(data){
+        var map = window.reachMap;
+        if (!map) return;
+        if (outfallLayer){ map.removeLayer(outfallLayer); outfallLayer = null; }
+        var legend = document.getElementById('outfallLegend');
+        if (!data.outfalls || data.outfalls.length === 0){ legend.style.display = 'none'; return; }
+        if (!map.getPane('outfalls')){
+          map.createPane('outfalls');
+          map.getPane('outfalls').style.zIndex = 390;  // under the station markers, above the tiles
+        }
+        outfallLayer = L.layerGroup();
+        data.outfalls.forEach(function(o){
+          var marker = L.circleMarker([o.latitude, o.longitude], {
+            pane: 'outfalls',
+            radius: o.triggering ? 8 : 5,
+            color: o.triggering ? '#1B2A2F' : '#FFFFFF',
+            weight: o.triggering ? 3 : 1.2,
+            fillColor: OUTFALL_COLORS[o.status] || '#AEB8BC',
+            fillOpacity: 0.9
+          });
+          var html = '<strong>' + escapeHtml(o.name) + '</strong><br>' + escapeHtml(o.status_text) +
+            '<br>' + o.distance_km + " km from Penn's Landing" +
+            '<br>Last polled ' + formatDateTime(o.last_poll) +
+            (o.triggering ? '<br><em>Decided the current status</em>' : '');
+          marker.bindTooltip(html, { direction: 'top' });
+          marker.bindPopup(html);
+          outfallLayer.addLayer(marker);
+        });
+        outfallLayer.addTo(map);
+        document.getElementById('outfallAsOf').textContent = data.snapshot_at ? 'as of ' + formatDateTime(data.snapshot_at) : '';
+        legend.style.display = 'flex';
+      })
+      .catch(function(){ /* no snapshot yet or offline - draw nothing, imply nothing */ });
+  }
+
   loadRecentReadings();
+  loadOutfalls();
   // The server pulls on the hour; re-reading what it stored lets a tab that stays open pick up
   // the new reading within minutes. This is a cheap read of stored rows - it fetches nothing
   // from USGS or any other outside service.
   setInterval(loadRecentReadings, 5 * 60 * 1000);
+  setInterval(loadOutfalls, 5 * 60 * 1000);
 </script>
 </body>
 </html>

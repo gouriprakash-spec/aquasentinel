@@ -53,6 +53,19 @@ CREATE TABLE IF NOT EXISTS readings (
     retrieved_at TEXT NOT NULL
 );
 
+-- The latest snapshot of the sewer outfalls the overflow rule considered (within its radius,
+-- fresh data), saved by each scheduled pull so the dashboard map shows what the status was decided
+-- from. Replaced wholesale on every successful CSOcast read.
+CREATE TABLE IF NOT EXISTS cso_outfalls (
+    name TEXT PRIMARY KEY,
+    latitude REAL NOT NULL,
+    longitude REAL NOT NULL,
+    status INTEGER NOT NULL,
+    distance_km REAL NOT NULL,
+    last_poll TEXT NOT NULL,
+    snapshot_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS alert_state (
     location TEXT PRIMARY KEY,
     current_tier TEXT NOT NULL,
@@ -214,6 +227,37 @@ def save_reading(reading: dict, db_path: Path | None = None) -> int:
             (*columns.values(), existing),
         )
         return existing
+
+
+def save_cso_outfalls(outfalls: list[dict], snapshot_at: str, db_path: Path | None = None) -> None:
+    """Replace the saved outfall snapshot. An outfall without coordinates cannot be drawn, so it
+    is skipped rather than given a made-up position. One transaction: readers never see a
+    half-replaced snapshot."""
+    drawable = [o for o in outfalls if o.get("latitude") is not None and o.get("longitude") is not None]
+    with _connect(db_path) as conn:
+        conn.execute("DELETE FROM cso_outfalls")
+        conn.executemany(
+            "INSERT INTO cso_outfalls (name, latitude, longitude, status, distance_km, last_poll, snapshot_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [
+                (o["name"], o["latitude"], o["longitude"], o["status"], o["distance_km"], o["last_poll"], snapshot_at)
+                for o in drawable
+            ],
+        )
+
+
+def get_cso_outfalls(db_path: Path | None = None) -> dict:
+    """The saved snapshot: {"snapshot_at": iso | None, "outfalls": [...]}, nearest first."""
+    with _connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT name, latitude, longitude, status, distance_km, last_poll, snapshot_at "
+            "FROM cso_outfalls ORDER BY distance_km"
+        ).fetchall()
+    outfalls = [dict(row) for row in rows]
+    snapshot_at = outfalls[0]["snapshot_at"] if outfalls else None
+    for outfall in outfalls:
+        del outfall["snapshot_at"]
+    return {"snapshot_at": snapshot_at, "outfalls": outfalls}
 
 
 def get_recent_readings(limit: int = 9, db_path: Path | None = None) -> list[dict]:

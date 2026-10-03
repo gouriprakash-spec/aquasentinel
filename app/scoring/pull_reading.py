@@ -114,6 +114,20 @@ def pull_reading() -> dict:
             "model_probability_unsafe": round(probability_unsafe, 3),
             "cso_status": cso_status,
             "cso": cso_state,
+            # Every outfall the rule considered, with coordinates, for the dashboard map (saved by
+            # the scheduled pull). None means the feed could not be read - NOT "nothing nearby" -
+            # so the previous snapshot is kept instead of being wiped.
+            "cso_outfalls": None if nearby_outfalls is None else [
+                {
+                    "name": outfall.name,
+                    "status": outfall.status,
+                    "distance_km": round(outfall.distance_km, 2),
+                    "last_poll": outfall.last_poll.isoformat(),
+                    "latitude": outfall.latitude,
+                    "longitude": outfall.longitude,
+                }
+                for outfall in nearby_outfalls
+            ],
         },
         "threshold_cfu_100ml": config.UNSAFE_THRESHOLD_CFU_100ML,
         "model_version": "rf_nearshore",
