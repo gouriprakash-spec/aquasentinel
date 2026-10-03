@@ -123,7 +123,12 @@ def api_readings(limit: int = 9) -> list[dict]:
     """Recent stored readings, newest first - what the dashboard reads on load. Each row also
     carries `gauge_age_hours` and `stale` (see app.status.annotate_freshness), so the page can
     flag a stale reading without knowing the freshness limit itself."""
-    return annotate_freshness(db.get_recent_readings(limit=limit))
+    rows = annotate_freshness(db.get_recent_readings(limit=limit))
+    if rows:
+        # When did the water-quality sensors last report? (The newest row may have no gauge data,
+        # and the last row that did can be older than the rows being shown.)
+        rows[0]["last_gauge_reading_time"] = db.get_last_gauge_reading_time()
+    return rows
 
 
 @app.get("/api/outfalls")

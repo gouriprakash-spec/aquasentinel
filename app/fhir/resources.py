@@ -170,6 +170,11 @@ def build_risk_observation(
     tier_code = _tier_code(reading["risk_tier"])
     decision_basis = reading["evidence"].get("decision_basis", "rainfall_rule")
     method_text = RISK_METHOD_TEXT.get(decision_basis, RISK_METHOD_TEXT["rainfall_rule"])
+    if not reading["evidence"].get("gauge_available", True):
+        # No gauge data this pull, so the model could not run: say so instead of claiming a
+        # model-informed confidence that does not exist.
+        method_text = method_text.replace(", model-informed confidence", "")
+        method_text += "; no model confidence (gauge data unavailable)"
 
     derived_from = [{"reference": rainfall_entry["fullUrl"]}]
     if cso_entry is not None:

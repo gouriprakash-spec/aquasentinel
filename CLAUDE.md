@@ -71,8 +71,12 @@ Oct 3-4 are reserved for the demo video, the public repo, and the submission tex
 ## Architecture Rules (non-negotiable)
 - **Code decides, agents don't.** Tier, validity, change of state, recipients, and training
   labels are decided by deterministic code. Agents only parse, read, draft, and match.
-- **Fail closed.** Missing, stale (gauge reading older than 2 hours), or malformed input ->
-  "status unavailable", no message, never an all-clear.
+- **Fail closed.** Missing or malformed rainfall input, or no stored reading at all ->
+  "status unavailable", no message, never an all-clear. *Amended 2026-10-03 (Gouri approved):* a
+  missing or stale (older than 2 hours) USGS gauge reading is NOT fail-closed any more, because
+  the gauge only feeds the model's rule/model agreement and never decides the tier. That pull
+  still produces a row: tier from rainfall + CSO, water-quality columns and agreement "n/a". See
+  `docs/alert-rules-decisions.md` decision 4.
 - **Two levels only:** Safe / Unsafe at 235 CFU/100 mL. No Caution level.
 - **No direct-to-public alerting.** AquaSentinel never pushes a health-risk message to an
   individual — that decision belongs to the agency. FHIR delivery to RPHSA is the only

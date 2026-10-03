@@ -82,7 +82,9 @@ Build order is top to bottom; see `plan.md` for the cut line.
   stored readings (the public pull button and route were removed 2026-10-02 so no visitor can
   trigger live requests to the data sources).
 - **Alert rules and gating (deterministic, fail-closed).** Per `docs/alert-rules-decisions.md`:
-  newest gauge reading older than 2 hours → status "unavailable" (no message, never an
+  a missing or older-than-2-hours gauge reading blanks the water-quality columns and the
+  rule/model agreement to "n/a" but the tier still comes from rainfall + sewer overflow (amended
+  2026-10-03); missing rainfall data → status "unavailable" (no message, never an
   all-clear); alert on change of state only; all-clear only after 48 continuous hours of Safe,
   with any Unsafe reading restarting the clock; RPHSA receives every Flag change year-round.
 - **Standards layer.** An OAH IG (HL7-EU, R4) Indicators Observation (`subject` = Location,

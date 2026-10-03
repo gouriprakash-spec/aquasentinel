@@ -108,8 +108,10 @@ year-round. The dashboard stays exactly as described above: pull-based, public, 
 - **Sewer overflow:** active CSO overflow near the reach (if CSOcast is usable) forces Unsafe.
   The message names the reason; never show a bacteria value we do not have. (Amended 2026-10-03:
   it does NOT alter the confidence, which is always the rule/model agreement.)
-- **Freshness:** newest gauge reading older than **2 hours** -> status "unavailable", no message,
-  never an all-clear. Rainfall-only fallback may still run.
+- **Freshness:** a missing gauge reading or one older than **2 hours** -> the pull still makes a
+  row (amended 2026-10-03): tier from the rainfall + CSO rules, water-quality columns and
+  rule/model agreement "n/a", `gauge_available` false, `confidence` null. Missing rainfall data
+  still gives no row and status "unavailable". Gauge-less rows count for the 48-hour all-clear.
 - **Change of state only:** alert when the level differs from the last alerted state.
 - **All-clear:** only after **48 continuous hours** of Safe; any Unsafe reading restarts the clock.
 - **Agency delivery:** FHIR Flag changes go to RPHSA **year-round** — the only notification

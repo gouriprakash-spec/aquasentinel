@@ -16,7 +16,8 @@ say never to show a bacteria value the system does not have.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import logging
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import joblib
@@ -27,7 +28,7 @@ from app.ingestion.csocast import CsoDataUnavailable
 from app.ingestion.csocast import fetch_nearby_outfalls as fetch_cso_outfalls
 from app.ingestion.nws import RainfallUnavailable
 from app.ingestion.nws import fetch_antecedent_rainfall as fetch_nws_rainfall
-from app.ingestion.usgs import fetch_usgs_proxies
+from app.ingestion.usgs import UsgsDataUnavailable, fetch_usgs_proxies
 from app.model.cso_rule import apply_cso_escalation, classify_cso_state
 from app.model.rules_fallback import classify_by_rainfall
 
@@ -43,6 +44,8 @@ SOURCE_URL = "https://waterservices.usgs.gov/nwis/iv/?sites=01467200"
 
 _model_bundle: dict | None = None  # lazy-loaded, cached at module level
 
+logger = logging.getLogger(__name__)
+
 
 def _load_model() -> dict:
     global _model_bundle
@@ -57,23 +60,35 @@ def pull_reading() -> dict:
     Milestone 1b (2026-09-27): the rainfall rule decides risk_tier; the near-shore-trained
     model only informs confidence (how much it agrees with the rule), never the tier itself.
     See docs/superpowers/specs/2026-09-27-model-honesty-fix-milestone1b-design.md Section 3.
+
+    Gauge unavailable (Gouri, 2026-10-03): the gauge only ever fed the model, so when USGS has no
+    CURRENT reading (an error, or data older than config.FRESHNESS_LIMIT_HOURS) the pull still
+    returns a reading. The tier comes from the rainfall rule and the overflow rule exactly as
+    before; the water-quality values and the confidence (rule/model agreement) are None, because
+    the model cannot run without them; and the reading's time is the pull time. Missing RAINFALL
+    still raises (no rainfall = no tier = no reading).
     """
-    proxies = fetch_usgs_proxies()
+    pulled_at = datetime.now(timezone.utc)
+    proxies = _fetch_current_gauge_proxies(pulled_at)  # None = no current gauge reading
     rainfall, rainfall_source = _fetch_rainfall()
 
-    bundle = _load_model()
     decision = classify_by_rainfall(rainfall["precip_prev_48h_mm"])
     risk_tier = decision["risk_tier"]
 
-    feature_values = _build_feature_vector(proxies, rainfall, bundle["features"])
-    model = bundle["model"]
-    probability_unsafe = float(model.predict_proba([feature_values])[0][1])
-    # Confidence: how much the model agrees with the rule's decision. If the rule says
-    # Unsafe, a high probability_unsafe from the model IS agreement; if the rule says Safe,
-    # a LOW probability_unsafe is agreement - same shape the old model-decides confidence
-    # formula used, just now measuring agreement with the rule instead of the model's own
-    # certainty in its own decision.
-    confidence = probability_unsafe if risk_tier == "Unsafe" else (1.0 - probability_unsafe)
+    if proxies is not None:
+        bundle = _load_model()
+        feature_values = _build_feature_vector(proxies, rainfall, bundle["features"])
+        model = bundle["model"]
+        probability_unsafe = float(model.predict_proba([feature_values])[0][1])
+        # Confidence: how much the model agrees with the rule's decision. If the rule says
+        # Unsafe, a high probability_unsafe from the model IS agreement; if the rule says Safe,
+        # a LOW probability_unsafe is agreement - same shape the old model-decides confidence
+        # formula used, just now measuring agreement with the rule instead of the model's own
+        # certainty in its own decision.
+        confidence = probability_unsafe if risk_tier == "Unsafe" else (1.0 - probability_unsafe)
+    else:
+        probability_unsafe = None
+        confidence = None
 
     nearby_outfalls = _fetch_cso_signal()
     escalation = apply_cso_escalation(risk_tier, confidence, nearby_outfalls or [])
@@ -91,27 +106,38 @@ def pull_reading() -> dict:
             "last_poll": outfall.last_poll.isoformat(),
         }
 
-    oldest_proxy_time = min(reading.retrieved_at for reading in proxies.values())
+    gauge_available = proxies is not None
+    # The reading's time is when the DATA is from: the gauge's oldest measurement when we have
+    # one, otherwise the pull itself (rainfall and CSOcast are real-time as of this pull).
+    reading_time = (
+        min(reading.retrieved_at for reading in proxies.values()) if gauge_available else pulled_at
+    )
 
     return {
         "location": LOCATION_ID,
         "location_name": LOCATION_NAME,
-        "time": oldest_proxy_time.isoformat(),
+        "time": reading_time.isoformat(),
         "risk_tier": risk_tier,
-        "confidence": round(confidence, 3),
+        "confidence": None if confidence is None else round(confidence, 3),
         "source": SOURCE_NAME,
         "source_url": SOURCE_URL,
-        "retrieved_at": datetime.now(timezone.utc).isoformat(),
+        "retrieved_at": pulled_at.isoformat(),
         "evidence": {
-            "proxies": {name: reading.value for name, reading in proxies.items()},
-            "proxy_timestamps": {
-                name: reading.retrieved_at.isoformat() for name, reading in proxies.items()
-            },
+            "gauge_available": gauge_available,
+            "proxies": (
+                {name: reading.value for name, reading in proxies.items()} if gauge_available else {}
+            ),
+            "proxy_timestamps": (
+                {name: reading.retrieved_at.isoformat() for name, reading in proxies.items()}
+                if gauge_available else {}
+            ),
             "rainfall_mm": rainfall,
             "rainfall_source": rainfall_source,
             "decision_basis": decision_basis,
             "rule_threshold_mm": config.RAIN_FALLBACK_THRESHOLD_MM,
-            "model_probability_unsafe": round(probability_unsafe, 3),
+            "model_probability_unsafe": (
+                None if probability_unsafe is None else round(probability_unsafe, 3)
+            ),
             "cso_status": cso_status,
             "cso": cso_state,
             # Every outfall the rule considered, with coordinates, for the dashboard map (saved by
@@ -130,10 +156,29 @@ def pull_reading() -> dict:
             ],
         },
         "threshold_cfu_100ml": config.UNSAFE_THRESHOLD_CFU_100ML,
-        "model_version": "rf_nearshore",
-        "regime": "nearshore",
+        "model_version": "rf_nearshore" if gauge_available else "rainfall_rule_only",
+        "regime": "nearshore" if gauge_available else "no_gauge",
         "kind": "model_estimate",
     }
+
+
+def _fetch_current_gauge_proxies(now: datetime) -> dict | None:
+    """The USGS gauge proxies, or None when the gauge has no CURRENT reading: the request failed,
+    or its newest data is older than config.FRESHNESS_LIMIT_HOURS. Never silent: the reason is
+    logged. (Returning None, not raising, is the point - see pull_reading's docstring.)"""
+    try:
+        proxies = fetch_usgs_proxies()
+    except UsgsDataUnavailable as exc:
+        logger.warning("USGS gauge unavailable (%s); continuing without gauge data", exc)
+        return None
+    oldest = min(reading.retrieved_at for reading in proxies.values())
+    if now - oldest > timedelta(hours=config.FRESHNESS_LIMIT_HOURS):
+        logger.warning(
+            "USGS gauge data is older than the freshness limit (its newest values are from %s); "
+            "continuing without gauge data", oldest.isoformat(),
+        )
+        return None
+    return proxies
 
 
 def _fetch_rainfall() -> tuple[dict, str]:

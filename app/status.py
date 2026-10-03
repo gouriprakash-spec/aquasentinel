@@ -17,6 +17,10 @@ from app.scoring.pull_reading import SOURCE_NAME, SOURCE_URL
 
 
 def build_status_contract(row: dict) -> dict:
+    # No current USGS reading for this pull (2026-10-03): the stored confidence is only a NOT NULL
+    # placeholder, so it is reported as None (n/a), never as a number. The water-quality values in
+    # `proxies` are already None for such a row. Rows from before the column existed had gauge data.
+    gauge_available = bool(row.get("gauge_available", 1))
     cso_status = None
     if row["cso_outfall_name"] is not None:
         cso_status = {
@@ -29,7 +33,8 @@ def build_status_contract(row: dict) -> dict:
         "location": row["location"],
         "time": row["reading_time"],
         "risk_tier": row["risk_tier"],
-        "confidence": row["confidence"],
+        "confidence": row["confidence"] if gauge_available else None,
+        "gauge_available": gauge_available,
         "source": SOURCE_NAME,
         "source_url": SOURCE_URL,
         "retrieved_at": row["retrieved_at"],
@@ -121,6 +126,10 @@ def annotate_freshness(rows: list[dict], now: datetime | None = None) -> list[di
     annotated = []
     for index, row in enumerate(rows):
         copy = dict(row)
+        # No gauge data: the stored confidence is a placeholder, so say n/a instead of a number.
+        copy["gauge_available"] = bool(row.get("gauge_available", 1))
+        if not copy["gauge_available"]:
+            copy["confidence"] = None
         try:
             reading_time = _parse_utc(row["reading_time"])
             judged_at = now if index == 0 else _parse_utc(row["retrieved_at"])

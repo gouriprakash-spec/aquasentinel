@@ -103,7 +103,7 @@ async def get_current_status(location_id: str) -> dict:
 
     Returns:
         On success: {"location": str, "time": str, "risk_tier": "Safe"|"Unsafe",
-        "confidence": float, "source": str, "source_url": str, "retrieved_at": str,
+        "confidence": float|null, "gauge_available": bool, "source": str, "source_url": str, "retrieved_at": str,
         "threshold_cfu_100ml": int, "model_version": str, "regime": str,
         "decision_basis": "rainfall_rule"|"cso_overflow_rule", "rule_threshold_mm": float,
         "rainfall_source": "nws"|"open-meteo", "model_probability_unsafe": float,
@@ -122,6 +122,10 @@ async def get_current_status(location_id: str) -> dict:
         rainfall rule's verdict) and is never altered by an overflow. So an overflow-decided
         "Unsafe" can legitimately show a high confidence (e.g. 0.86) - the rainfall rule and
         the model agreed that rain alone was not a risk; the overflow is what flipped the tier.
+        When the USGS gauge had no current reading for the last pull (gauge_available is false),
+        the tier is still decided (by the rainfall rule and the overflow rule - the gauge never
+        decides it), but confidence is null and the water-quality values in proxies are null:
+        report them as "not available", never as zero. precip_* values are real-time rainfall.
         On an unknown location or no reading yet: {"status": "unavailable", "reason": str}
     """
     if location_id != LOCATION_ID:

@@ -74,7 +74,9 @@ Build top to bottom. If behind on Oct 1, **cut from the bottom, never the middle
    throughout. `app/alerts/gating.py`; `app/tests/test_gating.py` has 9 tests covering each rule,
    including a stale input producing no event and never an all-clear. *Amended 2026-09-27: the
    public channel is cut (see Overview), so the season gate now only matters for the
-   agency-vs-public distinction in the code, not for any live public alert.*
+   agency-vs-public distinction in the code, not for any live public alert. Amended 2026-10-03:
+   a missing/stale USGS reading no longer makes the status "unavailable"; the pull still records
+   a row (tier from rainfall + CSO, water quality "n/a"). See `docs/alert-rules-decisions.md` #4.*
 4. **FHIR out. DONE 2026-09-26.** OAH IG Observation + `Flag` delivered over a FHIR `Subscription`
    to the RPHSA stub, with real Subscription mechanics (criteria, channel, handshake) - see
    `docs/superpowers/specs/2026-09-26-fhir-milestone4-design.md` for the full design. `app/fhir/`,

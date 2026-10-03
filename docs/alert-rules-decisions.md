@@ -34,6 +34,14 @@ Decisions made one at a time on Sep 23, 2026, and applied to `docs/product-brief
 ## 4. Gauge freshness limit → 2 hours
 - Decision: if the newest USGS 01467200 reading is more than 2 hours old, the status is
   "unavailable" (no message, never an all-clear); the rainfall-only fallback may still run.
+- **Amended 2026-10-03 (Gouri):** a missing or older-than-2-hours USGS reading no longer makes the
+  whole status "unavailable". The gauge only feeds the model, and the model only produces the
+  rule/model agreement; it never decides Safe/Unsafe (the rainfall rule and the sewer-overflow rule
+  do). So such a pull still produces a row: the tier comes from rainfall + sewer overflow, the
+  water-quality columns and the rule/model agreement read "n/a", and the row's time is the pull
+  time. These gauge-less rows count normally for agency alerts, INCLUDING the 48-hour all-clear.
+  The FHIR Bundle omits the water-quality Observations and says no model confidence exists.
+  Still fail closed: missing rainfall data (no row, status "unavailable").
 - Basis (checked Sep 23, 2026): the gauge reports every 5 minutes; the newest reading was about
   30 minutes old when fetched. Data are provisional.
 

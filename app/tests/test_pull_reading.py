@@ -8,7 +8,7 @@ contract from docs/product-brief.md:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from app import config
 from app.ingestion import open_meteo
@@ -18,8 +18,10 @@ from app.ingestion.usgs import ProxyReading
 from app.scoring import pull_reading as pr
 
 
-def _fake_proxies() -> dict:
-    now = datetime(2026, 9, 25, 21, 25, tzinfo=timezone.utc)
+def _fake_proxies(age_hours: float = 0.25) -> dict:
+    # Relative to now: a gauge reading older than config.FRESHNESS_LIMIT_HOURS is treated as "no
+    # gauge data" (2026-10-03), so a fixed past timestamp would silently turn every test into one.
+    now = datetime.now(timezone.utc) - timedelta(hours=age_hours)
     return {
         "water_temp_c": ProxyReading(21.5, now, "P"),
         "sp_conductance_uscm": ProxyReading(269.0, now, "P"),
@@ -82,7 +84,9 @@ def test_falls_back_to_open_meteo_when_nws_rainfall_is_unavailable(monkeypatch):
 
 
 def test_uses_the_oldest_proxy_reading_as_the_reading_time(monkeypatch):
-    stale = datetime(2026, 9, 25, 18, 0, tzinfo=timezone.utc)
+    # Older than the rest but still inside the 2-hour freshness limit (an older straggler would
+    # make the whole gauge count as unavailable - see test_gauge_unavailable.py).
+    stale = datetime.now(timezone.utc) - timedelta(hours=1)
     proxies = _fake_proxies()
     proxies["ph"] = ProxyReading(7.3, stale, "P")  # one straggler, older than the rest
 

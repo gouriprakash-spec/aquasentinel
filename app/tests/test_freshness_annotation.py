@@ -172,7 +172,7 @@ def test_the_dashboard_has_a_date_column_and_no_comment_column(monkeypatch, tmp_
 
     page = client.get("/").text
 
-    assert "<th>POLL DATE</th>" in page
+    assert "<th>PULL DATE</th>" in page
     assert "<th>COMMENT" not in page
     assert 'id="dataNote"' in page  # the note under the table exists
 
@@ -180,14 +180,14 @@ def test_the_dashboard_has_a_date_column_and_no_comment_column(monkeypatch, tmp_
 def test_the_note_names_the_silent_sensors_and_sits_under_the_table_not_in_the_banner(monkeypatch, tmp_path):
     """Gouri, 2026-10-03: the flow/stage sensors at the station keep reporting while its
     WATER-QUALITY probe is silent, so "the gauge is unavailable" was misleading. The note says
-    which sensors, when they last reported and when AquaSentinel last checked, in plain words (no
+    which sensors, when they last reported and when AquaSentinel last pulled, in plain words (no
     "stale"), and lives in its own note below the table - not inside the banner."""
     client = _client(monkeypatch, tmp_path)
 
     page = client.get("/").text
 
     assert "The water-quality sensors at the Penn's Landing gauge" in page
-    assert "last checked on" in page
+    assert "last pulled on" in page
     assert "Check back in an hour for a more recent status." in page
     # the old wording is gone, and nothing in the banner code adds a note any more
     assert "The gauge is currently unavailable." not in page
@@ -195,23 +195,23 @@ def test_the_note_names_the_silent_sensors_and_sits_under_the_table_not_in_the_b
     assert page.index('id="dataNote"') > page.index('id="tbody"')  # under the table
 
 
-def test_the_time_column_is_headed_poll_time_because_it_is_when_we_checked(monkeypatch, tmp_path):
-    """Gouri, 2026-10-03: the column shows when AquaSentinel last POLLED, not when the sensors
+def test_the_time_column_is_headed_pull_time_because_it_is_when_we_pulled(monkeypatch, tmp_path):
+    """Gouri, 2026-10-03: the column shows when AquaSentinel last PULLED, not when the sensors
     measured, and a bare "TIME" was read as the reading's time. The header says what it is."""
     client = _client(monkeypatch, tmp_path)
 
     page = client.get("/").text
 
-    assert "<th>POLL TIME</th>" in page
+    assert "<th>PULL TIME</th>" in page
     assert "<th>TIME</th>" not in page
 
 
-def test_the_date_column_is_headed_poll_date_to_match_poll_time(monkeypatch, tmp_path):
+def test_the_date_column_is_headed_pull_date_to_match_pull_time(monkeypatch, tmp_path):
     client = _client(monkeypatch, tmp_path)
 
     page = client.get("/").text
 
-    assert "<th>POLL DATE</th>" in page
+    assert "<th>PULL DATE</th>" in page
     assert "<th>DATE</th>" not in page
 
 
@@ -278,5 +278,53 @@ def test_the_map_framing_does_not_reserve_label_space_that_a_phone_does_not_have
 
     page = client.get("/").text
 
-    assert "map.getSize().x < 600" in page
+    # Desktop maps are ~530px wide (the card shares its row), phone maps ~325px. The phone padding must
+    # apply only below the width where the desktop label room (310px) no longer fits.
+    assert "map.getSize().x < 420" in page
+    assert "map.getSize().x < 600" not in page
     assert "padding: [30, 30]" in page
+
+
+def test_the_live_readings_explanation_lives_in_the_intro_card(monkeypatch, tmp_path):
+    """Gouri, 2026-10-03: the intro card had a lot of empty space, so the two explanatory paragraphs
+    that used to sit under the 'Live readings' title now sit in the intro card, ahead of the map
+    card. The page's JavaScript still finds the threshold span by its id."""
+    client = _client(monkeypatch, tmp_path)
+
+    page = client.get("/").text
+
+    intro_start = page.index('<div class="left card">')
+    map_card = page.index('<div class="map card">')
+    title = page.index(">Live readings<")
+    first_paragraph = page.index("Each pull reads live data from the")
+    method_paragraph = page.index("How the status is decided:")
+
+    assert intro_start < first_paragraph < map_card
+    assert intro_start < method_paragraph < map_card
+    assert title > map_card  # the section title stays under the map, with no paragraphs after it
+    assert page.index('id="ruleThreshold"') < map_card
+    assert 'id="methodology"' in page
+
+
+def test_the_map_reframes_itself_when_its_frame_changes_size(monkeypatch, tmp_path):
+    """The map frame stretches with the intro card, which settles in height after fonts load. Leaflet
+    was framed for the early size (544px) while the frame ended at 520px, cutting a station label off
+    at the left edge. The map re-measures and re-frames whenever its frame is resized."""
+    client = _client(monkeypatch, tmp_path)
+
+    page = client.get("/").text
+
+    assert "new ResizeObserver" in page
+    assert "invalidateSize()" in page
+
+
+def test_the_map_is_framed_without_animation_so_a_second_framing_is_never_dropped(monkeypatch, tmp_path):
+    """Leaflet ignores a new fitBounds while a zoom animation is running. The first framing animated,
+    the resize-triggered second one arrived mid-animation and was dropped, so the map stayed at a
+    stale zoom and a station label was cut off at the edge. Framing is applied instantly."""
+    client = _client(monkeypatch, tmp_path)
+
+    page = client.get("/").text
+
+    assert "padding: [30, 30], animate: false" in page
+    assert "paddingBottomRight: [140, 20], animate: false" in page

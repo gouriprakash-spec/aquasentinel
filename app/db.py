@@ -47,6 +47,11 @@ CREATE TABLE IF NOT EXISTS readings (
     -- The dashboard's CSO field: "Overflow" / "No overflow" / "Reading unavailable".
     -- NULL on rows stored before this existed - read back as "Reading unavailable".
     cso_state TEXT,
+    -- 0 when USGS had no CURRENT reading for this pull (2026-10-03): the water-quality columns are then
+    -- NULL, model_probability_unsafe is NULL, and `confidence` holds 0.0 only because the column is
+    -- NOT NULL - it is NOT a value and every reader (app.status) returns None for it. Rows from
+    -- before this column existed all had gauge data, hence the default of 1.
+    gauge_available INTEGER NOT NULL DEFAULT 1,
     threshold_cfu_100ml INTEGER NOT NULL,
     model_version TEXT NOT NULL,
     regime TEXT NOT NULL,
@@ -85,12 +90,13 @@ def _connect(db_path: Path | None = None) -> sqlite3.Connection:
     return conn
 
 
-_CSO_COLUMNS = [
+_COLUMNS_ADDED_LATER = [
     ("cso_outfall_name", "TEXT"),
     ("cso_outfall_status", "INTEGER"),
     ("cso_distance_km", "REAL"),
     ("cso_last_poll", "TEXT"),
     ("cso_state", "TEXT"),
+    ("gauge_available", "INTEGER NOT NULL DEFAULT 1"),
 ]
 
 
@@ -111,7 +117,7 @@ def _migrate_cso_columns(conn: sqlite3.Connection) -> None:
     insert_reading() call raising OperationalError.
     """
     existing = {row["name"] for row in conn.execute("PRAGMA table_info(readings)")}
-    for column_name, column_type in _CSO_COLUMNS:
+    for column_name, column_type in _COLUMNS_ADDED_LATER:
         if column_name not in existing:
             conn.execute(f"ALTER TABLE readings ADD COLUMN {column_name} {column_type}")
 
@@ -127,7 +133,9 @@ def _reading_columns(reading: dict) -> dict:
         "location": reading["location"],
         "reading_time": reading["time"],
         "risk_tier": reading["risk_tier"],
-        "confidence": reading["confidence"],
+        # None = no gauge data, so no rule/model agreement. The column is NOT NULL, so store 0.0 and
+        # let gauge_available say it means "n/a" (app.status turns it back into None on the way out).
+        "confidence": 0.0 if reading["confidence"] is None else reading["confidence"],
         "water_temp_c": proxies.get("water_temp_c"),
         "sp_conductance_uscm": proxies.get("sp_conductance_uscm"),
         "dissolved_oxygen_mgl": proxies.get("dissolved_oxygen_mgl"),
@@ -145,6 +153,7 @@ def _reading_columns(reading: dict) -> dict:
         "cso_distance_km": cso_status.get("distance_km"),
         "cso_last_poll": cso_status.get("last_poll"),
         "cso_state": evidence.get("cso"),
+        "gauge_available": 1 if evidence.get("gauge_available", True) else 0,
         "threshold_cfu_100ml": reading["threshold_cfu_100ml"],
         "model_version": reading["model_version"],
         "regime": reading["regime"],
@@ -258,6 +267,16 @@ def get_cso_outfalls(db_path: Path | None = None) -> dict:
     for outfall in outfalls:
         del outfall["snapshot_at"]
     return {"snapshot_at": snapshot_at, "outfalls": outfalls}
+
+
+def get_last_gauge_reading_time(db_path: Path | None = None) -> str | None:
+    """The gauge's measurement time on the newest stored reading that HAD gauge data, or None.
+    Lets the dashboard say when the water-quality sensors last reported."""
+    with _connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT reading_time FROM readings WHERE gauge_available = 1 ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+    return row["reading_time"] if row else None
 
 
 def get_recent_readings(limit: int = 9, db_path: Path | None = None) -> list[dict]:

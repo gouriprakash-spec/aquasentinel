@@ -78,7 +78,7 @@
   .btn:hover{background:#0A4A57;}
   /* toolbar */
   .toolbar{display:flex;align-items:center;justify-content:space-between;gap:20px;}
-  .toolbar .sub{font-size:13px;color:var(--muted);margin-top:3px;line-height:1.5;}
+  .hero .left .sub{font-size:13px;color:var(--muted);margin-top:12px;line-height:1.5;}
   .data-note{font-size:13.5px;line-height:1.5;font-style:italic;color:var(--muted);}
   .pill{font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--amberink);background:var(--amberbg);border:1px solid var(--amberline);border-radius:999px;padding:6px 11px;}
   /* banner */
@@ -126,6 +126,22 @@
         &mdash; reading live proxies from the USGS Penn's Landing gauge and the weather
         station, then flagging the reach Safe or Unsafe.
       </p>
+      <div class="sub">Each pull reads live data from the <strong>USGS Penn's Landing gauge (01467200)</strong>
+        and the <strong>PHL weather station</strong> (or the Open-Meteo weather model when the
+        station's rain record is incomplete), then estimates how safe the Center City tidal
+        Delaware reach is for recreation right now.</div>
+      <div class="sub" id="methodology"><strong>How the status is decided:</strong> a disclosed
+        rainfall rule, not a model. The reach is flagged <strong>Unsafe</strong> when rain over the
+        <strong>two previous calendar days</strong> (a 48-hour window, midnight to midnight, the
+        same window the rule was derived on) is at least
+        <strong><span id="ruleThreshold">the rule threshold</span> mm</strong>. A model trained on
+        past DRBC E. coli samples taken near shore at Penn's Landing runs alongside it;
+        &ldquo;rule/model agreement&rdquo; shows how strongly that model agrees with the rule, and
+        is not the model's own verdict. A nearby, fresh, actively or recently overflowing
+        combined-sewer outfall can also force the reach <strong>Unsafe</strong>, overriding the
+        rainfall rule &mdash; the banner then names the outfall instead of showing the rain
+        amount. Ben Franklin Bridge and Navy Yard are DRBC channel
+        stations, shown for context.</div>
       <div class="chips">
         <span class="chip">USGS gauge 01467200</span>
         <span class="chip">Live weather station</span>
@@ -166,22 +182,6 @@
       <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
         <div class="disp" style="font-size:20px;font-weight:600;">Live readings</div>
       </div>
-      <div class="sub">Each pull reads live data from the <strong>USGS Penn's Landing gauge (01467200)</strong>
-        and the <strong>PHL weather station</strong> (or the Open-Meteo weather model when the
-        station's rain record is incomplete), then estimates how safe the Center City tidal
-        Delaware reach is for recreation right now.</div>
-      <div class="sub" id="methodology"><strong>How the status is decided:</strong> a disclosed
-        rainfall rule, not a model. The reach is flagged <strong>Unsafe</strong> when rain over the
-        <strong>two previous calendar days</strong> (a 48-hour window, midnight to midnight, the
-        same window the rule was derived on) is at least
-        <strong><span id="ruleThreshold">the rule threshold</span> mm</strong>. A model trained on
-        past DRBC E. coli samples taken near shore at Penn's Landing runs alongside it;
-        &ldquo;rule/model agreement&rdquo; shows how strongly that model agrees with the rule, and
-        is not the model's own verdict. A nearby, fresh, actively or recently overflowing
-        combined-sewer outfall can also force the reach <strong>Unsafe</strong>, overriding the
-        rainfall rule &mdash; the banner then names the outfall instead of showing the rain
-        amount. Ben Franklin Bridge and Navy Yard are DRBC channel
-        stations, shown for context.</div>
     </div>
   </section>
 
@@ -193,8 +193,8 @@
     <table>
       <thead>
         <tr>
-          <th>POLL DATE</th>
-          <th>POLL TIME</th>
+          <th>PULL DATE</th>
+          <th>PULL TIME</th>
           <th>RAIN TODAY <span class="u">mm</span></th>
           <th>RAIN 24H <span class="u">mm</span></th>
           <th>RAIN PRIOR 2 DAYS <span class="u">mm &middot; decides status</span></th>
@@ -254,8 +254,20 @@
     // That padding is for desktop. On a phone-width map 170+140px of label room would leave almost
     // no map at all and the view would zoom out across half the Northeast, so use a small even
     // padding there (the station labels may sit close together; the map stays usable).
-    var narrowMap = map.getSize().x < 600;
-    map.fitBounds(bounds, narrowMap ? { padding: [30, 30] } : { paddingTopLeft: [170, 20], paddingBottomRight: [140, 20] });
+    function frameMap(){
+      map.invalidateSize();  // re-measure first: Leaflet only knows the size it had when it last looked
+      var narrowMap = map.getSize().x < 420;
+      // animate:false - Leaflet silently drops a fitBounds that arrives while a zoom animation is running,
+      // which left the map at a stale zoom when the resize re-framing came right after the first one.
+      map.fitBounds(bounds, narrowMap ? { padding: [30, 30], animate: false } : { paddingTopLeft: [170, 20], paddingBottomRight: [140, 20], animate: false });
+    }
+    frameMap();
+    // The map frame stretches with the intro card next to it, whose height settles after the web
+    // fonts load. Without this the map stayed framed for the early (taller) size and a station label
+    // ended up cut off at the edge. Re-frame whenever the frame itself changes size.
+    if (window.ResizeObserver){
+      new ResizeObserver(function(){ frameMap(); }).observe(document.getElementById('reachMap'));
+    }
 
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
       maxZoom: 18,
@@ -373,7 +385,13 @@
     // rounded or made-up hour). Separate from `time`, which is when the gauge measured.
     var checked = reading.retrieved_at ? formatTime(reading.retrieved_at) : '&mdash;';
     var date = reading.retrieved_at ? formatDate(reading.retrieved_at) : '&mdash;';
+    // No current USGS reading for this pull: the water-quality values and the rule/model agreement
+    // do not exist, so they show 'n/a' - never 0. A row without the flag (older data) had a gauge.
+    var gaugeAvailable = reading.gauge_available !== false;
+    var na = function(value){ return gaugeAvailable ? round1(value) : 'n/a'; };
     return {
+      gaugeAvailable: gaugeAvailable,
+      lastGaugeReading: reading.last_gauge_reading_time ? formatDateTime(reading.last_gauge_reading_time) : null,
       time: formatTime(time),
       checked: checked,
       date: date,
@@ -389,12 +407,12 @@
       rain48: fmt1(rain48),
       ruleThreshold: fmt1(ruleThreshold),
       rainSource: RAIN_SOURCE_LABELS[rainSource] || null,
-      turb: round1(proxies.turbidity_fnu),
-      temp: round1(proxies.water_temp_c),
-      cond: round1(proxies.sp_conductance_uscm),
-      dox: round1(proxies.dissolved_oxygen_mgl),
-      ph: round1(proxies.ph),
-      confidencePct: Math.round(reading.confidence * 100),
+      turb: na(proxies.turbidity_fnu),
+      temp: na(proxies.water_temp_c),
+      cond: na(proxies.sp_conductance_uscm),
+      dox: na(proxies.dissolved_oxygen_mgl),
+      ph: na(proxies.ph),
+      confidencePct: gaugeAvailable ? Math.round(reading.confidence * 100) + '%' : 'n/a',
       status: reading.risk_tier,
       decisionBasis: decisionBasis,
       csoOutfallName: csoOutfallName,
@@ -448,7 +466,7 @@
       reasonClause =
         ' &middot; rain over the prior 2 days <strong>'+latest.rain48+' mm</strong>' +
         ' (Unsafe at &ge; '+latest.ruleThreshold+' mm)' +
-        ' &middot; rule/model agreement <strong>'+latest.confidencePct+'%</strong>';
+        ' &middot; rule/model agreement <strong>'+latest.confidencePct+'</strong>';
     }
     b.innerHTML =
       '<span class="dot" style="background:'+s.color+'"></span>' +
@@ -458,19 +476,25 @@
       ' <span style="color:var(--faint);">&middot; Source: AquaSentinel estimate' +
       (latest.rainSource ? '; rain from '+latest.rainSource : '') + '</span></div>';
 
-    // The note under the table. The banner keeps showing the most recent reading as-is; when the
-    // server says that reading is older than the freshness limit (the status API then reports
-    // "unavailable"), say plainly WHICH sensors went quiet and when. At this station the flow and
-    // stage sensors can keep reporting while the water-quality probe is silent, so "the gauge is
-    // unavailable" would mislead; and the table's TIME is when AquaSentinel last CHECKED, which
-    // is not when the sensors last reported, so both times are named.
+    // The note under the table. Two situations, both stated plainly:
+    // 1) The newest pull had no current USGS reading (gauge_available false): the tier still comes
+    //    from rainfall and sewer overflow, but the water-quality columns read n/a. Say which sensors
+    //    are silent, when they last reported, and when AquaSentinel last pulled. (At this station the
+    //    flow and stage sensors can keep reporting while the water-quality probe is silent, so
+    //    "the gauge is down" would mislead.)
+    // 2) The newest row itself is older than the freshness limit (pulls stopped): the server then
+    //    reports "unavailable", so say when the last pull happened.
     var note = document.getElementById('dataNote');
-    if (latest.stale){
-      var reported = (latest.gaugeAgeHours !== null && latest.gaugeAgeHours !== undefined)
-        ? ' last reported on '+latest.gaugeMeasured
-        : ' have not reported recently';
-      note.textContent = "The water-quality sensors at the Penn's Landing gauge" + reported +
-        (latest.checkedText ? ', and AquaSentinel last checked on '+latest.checkedText : '') +
+    if (!latest.gaugeAvailable){
+      var reported = latest.lastGaugeReading
+        ? ' they last reported on '+latest.lastGaugeReading
+        : ' they have not reported recently';
+      note.textContent = "The water-quality sensors at the Penn's Landing gauge are not reporting;" + reported +
+        (latest.checkedText ? ', and AquaSentinel last pulled on '+latest.checkedText : '') +
+        '. Check back in an hour for a more recent status.';
+      note.style.display = 'block';
+    } else if (latest.stale){
+      note.textContent = 'AquaSentinel' + (latest.checkedText ? ' last pulled on '+latest.checkedText : ' has not pulled recently') +
         '. Check back in an hour for a more recent status.';
       note.style.display = 'block';
     } else {
@@ -496,7 +520,7 @@
         '<td class="mono">'+r.cond+'</td>' +
         '<td class="mono">'+r.dox+'</td>' +
         '<td class="mono">'+r.ph+'</td>' +
-        '<td class="mono est">'+r.confidencePct+'%</td>' +
+        '<td class="mono est">'+r.confidencePct+'</td>' +
         '<td class="mono"'+(r.cso === 'Overflow' ? ' style="color:'+statusStyle(true).color+';font-weight:700;"' : '')+'>'+r.cso+'</td>' +
         '<td><span class="status" style="color:'+st.color+';background:'+st.bg+';">' +
         '<span style="width:7px;height:7px;border-radius:50%;background:'+st.color+';display:inline-block;"></span>'+r.status+'</span></td>' +
