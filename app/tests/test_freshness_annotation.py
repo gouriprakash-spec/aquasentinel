@@ -354,5 +354,29 @@ def test_the_tags_in_the_intro_card_are_labelled_data_sources(monkeypatch, tmp_p
 
     chips = page.index('<div class="chips">')
     label = page.index("Data Sources:")
-    first_chip = page.index('<span class="chip">', chips)
+    first_chip = page.index('class="chip"', chips)
     assert chips < label < first_chip
+
+
+def test_the_data_source_tags_are_links_to_the_sources_that_open_in_a_new_tab(monkeypatch, tmp_path):
+    """Gouri, 2026-10-03: the tags under "Data Sources:" link to the human-readable pages of the
+    sources themselves (not the raw API endpoints), so a judge can verify each claim in one click.
+    They open in a new tab and carry rel="noopener noreferrer" so the dashboard stays open and the
+    new page gets no handle on this one."""
+    import re
+
+    client = _client(monkeypatch, tmp_path)
+    page = client.get("/").text
+
+    block = page[page.index('<div class="chips">'):]
+    block = block[:block.index("</div>", block.index("CSOCast"))]
+    links = re.findall(r'<a class="chip" href="([^"]+)" target="_blank" rel="noopener noreferrer">([^<]+)</a>', block)
+
+    assert dict((text, href) for href, text in links) == {
+        "USGS gauge 01467200": "https://waterdata.usgs.gov/monitoring-location/01467200/",
+        "Live weather station": "https://forecast.weather.gov/data/obhistory/KPHL.html",
+        "DRBC E. coli labels": "https://www.nj.gov/drbc/",
+        "CSOCast": "https://water.phila.gov/maps/csocast/",
+    }
+    assert "<span class=\"chip\">" not in block  # none left as plain text
+    assert "a.chip:hover" in page and "a.chip:focus-visible" in page  # they look and behave like links

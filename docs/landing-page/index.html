@@ -67,6 +67,11 @@
   .chips{margin-top:auto;padding-top:12px;display:flex;gap:10px;flex-wrap:wrap;}
   .chips-label{flex-basis:100%;font-size:12.5px;font-weight:600;color:var(--muted);margin-bottom:-2px;}
   .chip{font-size:12.5px;color:var(--teal);background:var(--tealsoft);border-radius:8px;padding:7px 12px;}
+  /* The tags are links to the sources (2026-10-03): same look as before, plus a hover tint and a
+     visible keyboard-focus ring so they read as clickable and stay usable without a mouse. */
+  a.chip{text-decoration:none;cursor:pointer;}
+  a.chip:hover{background:#DCEAEC;text-decoration:underline;}
+  a.chip:focus-visible{outline:2px solid var(--teal);outline-offset:2px;}
   .map{overflow:hidden;display:flex;flex-direction:column;}
   .map .maphead{padding:16px 20px 0;display:flex;justify-content:space-between;align-items:center;}
   .map #reachMap{position:absolute;inset:0;width:100%;height:100%;background:var(--tealsoft);font-family:'IBM Plex Sans',sans-serif;}
@@ -141,10 +146,10 @@
         stations, shown for context.</div>
       <div class="chips">
         <div class="chips-label">Data Sources:</div>
-        <span class="chip">USGS gauge 01467200</span>
-        <span class="chip">Live weather station</span>
-        <span class="chip">DRBC E. coli labels</span>
-        <span class="chip">CSOCast</span>
+        <a class="chip" href="https://waterdata.usgs.gov/monitoring-location/01467200/" target="_blank" rel="noopener noreferrer">USGS gauge 01467200</a>
+        <a class="chip" href="https://forecast.weather.gov/data/obhistory/KPHL.html" target="_blank" rel="noopener noreferrer">Live weather station</a>
+        <a class="chip" href="https://www.nj.gov/drbc/" target="_blank" rel="noopener noreferrer">DRBC E. coli labels</a>
+        <a class="chip" href="https://water.phila.gov/maps/csocast/" target="_blank" rel="noopener noreferrer">CSOCast</a>
       </div>
     </div>
 
