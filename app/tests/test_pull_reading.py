@@ -200,9 +200,12 @@ def test_cso_overflow_escalates_a_safe_rainfall_reading_to_unsafe(monkeypatch):
     monkeypatch.setattr(pr, "fetch_cso_outfalls", lambda: [_outfall(status=4)])
 
     reading = pr.pull_reading()
+    monkeypatch.setattr(pr, "fetch_cso_outfalls", lambda: [])
+    same_pull_without_overflow = pr.pull_reading()
 
     assert reading["risk_tier"] == "Unsafe"
-    assert reading["confidence"] == config.CSO_OVERRIDE_CONFIDENCE
+    # The overflow changes the tier, never the rule/model agreement.
+    assert reading["confidence"] == same_pull_without_overflow["confidence"]
     assert reading["evidence"]["decision_basis"] == "cso_overflow_rule"
     assert reading["evidence"]["cso_status"]["outfall_name"] == "D_test"
     assert reading["evidence"]["cso_status"]["status"] == 4
@@ -237,13 +240,31 @@ def test_total_cso_outage_still_produces_a_valid_reading(monkeypatch):
     assert reading["evidence"]["cso_status"] is None
 
 
-def test_cso_trigger_on_an_already_unsafe_reading_still_overwrites_confidence_and_basis(monkeypatch):
+def test_cso_trigger_on_an_already_unsafe_reading_keeps_the_real_confidence_and_records_the_basis(monkeypatch):
     monkeypatch.setattr(pr, "fetch_usgs_proxies", lambda: _fake_proxies())
     monkeypatch.setattr(pr, "fetch_nws_rainfall", lambda: _fake_rainfall(precip_prev_48h_mm=50.0))
     monkeypatch.setattr(pr, "fetch_cso_outfalls", lambda: [_outfall(status=3)])
 
     reading = pr.pull_reading()
+    monkeypatch.setattr(pr, "fetch_cso_outfalls", lambda: [])
+    same_pull_without_overflow = pr.pull_reading()
 
     assert reading["risk_tier"] == "Unsafe"
-    assert reading["confidence"] == config.CSO_OVERRIDE_CONFIDENCE
+    assert reading["confidence"] == same_pull_without_overflow["confidence"]
     assert reading["evidence"]["decision_basis"] == "cso_overflow_rule"
+
+
+def test_overflow_does_not_change_the_rule_model_agreement_exactly(monkeypatch):
+    """The user-visible symptom this guards against: a Safe-by-rain reading forced Unsafe by an
+    overflow showed 30% 'agreement'. With a model that gives a 10% chance of Unsafe, the rule
+    (Safe, 0 mm) and the model agree at exactly 90%, overflow or not."""
+    monkeypatch.setattr(pr, "fetch_usgs_proxies", lambda: _fake_proxies())
+    monkeypatch.setattr(pr, "fetch_nws_rainfall", lambda: _fake_rainfall(precip_prev_48h_mm=0.0))
+    monkeypatch.setattr(pr, "_load_model", lambda: _stub_bundle(probability_unsafe=0.1))
+    monkeypatch.setattr(pr, "fetch_cso_outfalls", lambda: [_outfall(status=3)])
+
+    reading = pr.pull_reading()
+
+    assert reading["risk_tier"] == "Unsafe"
+    assert reading["evidence"]["decision_basis"] == "cso_overflow_rule"
+    assert reading["confidence"] == 0.9

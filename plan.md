@@ -85,10 +85,11 @@ Build top to bottom. If behind on Oct 1, **cut from the bottom, never the middle
    `docs/product-brief.md`). `/api/status`, the read-only MCP server, `/llms.txt`, JSON-LD. Done
    when the consistency test passes — MCP, `/api/status`, and the banner agree on tier and
    timestamp for one reading.
-6. **CSO overflow rule. DONE 2026-10-01.** Forces Unsafe (and drops confidence low enough to
-   queue a Milestone 8 confirmatory sample - Milestone 8 is now cut, so this is design intent
-   only) when a fresh, nearby outfall shows active or recent
-   overflow — a one-directional escalation layered on the rainfall rule (Milestone 1), never
+6. **CSO overflow rule. DONE 2026-10-01.** Forces Unsafe when a fresh, nearby outfall shows
+   active or recent overflow. (*Amended 2026-10-03: it originally also overwrote the confidence
+   with a fixed 0.3 so a Milestone 8 sample would queue. That was removed - the confidence now
+   always shows the real rule/model agreement, unaltered by the overflow.*) The rule is
+   triggered by overflow — a one-directional escalation layered on the rainfall rule (Milestone 1), never
    replacing it: it can only push Safe → Unsafe, never the reverse, and has no opinion at all
    when no outfall qualifies or the feed is unreachable. Full design and build record:
    `docs/superpowers/specs/2026-10-01-cso-overflow-rule-milestone6-design.md` and

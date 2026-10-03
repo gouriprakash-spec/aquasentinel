@@ -415,10 +415,9 @@
     b.style.border = '1px solid ' + (latest.status === "Unsafe" ? '#F0CFC8' : '#C7E4D3');
     var reasonClause;
     if (latest.decisionBasis === 'cso_overflow_rule'){
-      // CSO-escalated: say why, per docs/alert-rules-decisions.md decision 1 - and never
-      // show "rule/model agreement" here, since CSO_OVERRIDE_CONFIDENCE is a deliberately
-      // low fixed constant signaling "needs a confirmatory sample," not model/rule
-      // agreement.
+      // CSO-escalated: say why, per docs/alert-rules-decisions.md decision 1. The banner names
+      // the outfall instead of repeating the rain amount and the rule/model agreement; the
+      // table row below still shows that agreement, unaltered by the overflow.
       reasonClause =
         ' &middot; sewer overflow near outfall <strong>'+escapeHtml(latest.csoOutfallName)+'</strong>' +
         ' ('+latest.csoDistanceKm+' km from Penn\'s Landing)';

@@ -334,3 +334,14 @@ def test_dashboard_page_has_no_pull_button_or_pull_call(monkeypatch, tmp_path):
     assert "Pull latest reading" not in page
     assert "pullReading" not in page
     assert "/api/pull-reading" not in page
+
+
+def test_the_table_shows_the_real_rule_model_agreement_for_every_row(monkeypatch, tmp_path):
+    """The overflow rule no longer overwrites the confidence (2026-10-03), so there is no
+    placeholder to hide: the RULE/MODEL AGREEMENT column shows the real figure on every row,
+    including overflow-decided ones. (A short-lived "n/a (overflow rule)" workaround was removed.)"""
+    client = _client(monkeypatch, tmp_path)
+
+    page = client.get("/").text
+
+    assert "n/a (overflow rule)" not in page

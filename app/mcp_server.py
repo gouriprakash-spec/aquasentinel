@@ -117,9 +117,11 @@ async def get_current_status(location_id: str) -> dict:
         recently overflowing combined-sewer outfall (Milestone 6) OVERRIDES that: it forces
         risk_tier to "Unsafe" regardless of the rainfall rule's own verdict, sets
         decision_basis to "cso_overflow_rule", and populates cso_status with the
-        triggering outfall. In that case confidence is a deliberately low fixed value
-        signaling low certainty - it queues a confirmatory sample - not model/rule
-        agreement.
+        triggering outfall. The overflow changes only the tier and its stated reason:
+        confidence is ALWAYS the rule/model agreement (how strongly the model agrees with the
+        rainfall rule's verdict) and is never altered by an overflow. So an overflow-decided
+        "Unsafe" can legitimately show a high confidence (e.g. 0.86) - the rainfall rule and
+        the model agreed that rain alone was not a risk; the overflow is what flipped the tier.
         On an unknown location or no reading yet: {"status": "unavailable", "reason": str}
     """
     if location_id != LOCATION_ID:

@@ -41,6 +41,12 @@ def apply_cso_escalation(
 
     decision_basis is "cso_overflow_rule" when an outfall triggered, else None - the caller
     keeps whatever decision_basis it already had (e.g. "rainfall_rule") in that case.
+
+    `confidence` is passed through UNCHANGED. It is the rule/model agreement, and it must show
+    exactly that: an overflow changes the tier and the stated reason, never the agreement figure
+    (Gouri, 2026-10-03). It used to be overwritten with a fixed placeholder (0.3) so a
+    Milestone 8 sampling request would trigger; that feature was cut, and the placeholder only
+    ever misled readers into thinking it measured something.
     """
     triggered = next(
         (outfall for outfall in nearby_outfalls if outfall.status in config.CSO_TRIGGER_STATUSES),
@@ -57,7 +63,7 @@ def apply_cso_escalation(
 
     return {
         "risk_tier": "Unsafe",
-        "confidence": config.CSO_OVERRIDE_CONFIDENCE,
+        "confidence": confidence,
         "decision_basis": "cso_overflow_rule",
         "triggered_outfall": triggered,
     }

@@ -29,4 +29,6 @@ def test_cso_config_constants_exist_with_sane_values():
     assert config.CSO_NEARBY_RADIUS_KM == 5.0
     assert config.CSO_OUTFALL_FRESHNESS_HOURS == 24
     assert config.CSO_TRIGGER_STATUSES == (3, 4)
-    assert 0.0 <= config.CSO_OVERRIDE_CONFIDENCE < config.LOW_CONFIDENCE_CUTOFF
+    # The old fixed "override confidence" placeholder was removed (2026-10-03): the overflow rule
+    # must never alter the rule/model agreement.
+    assert not hasattr(config, "CSO_OVERRIDE_CONFIDENCE")

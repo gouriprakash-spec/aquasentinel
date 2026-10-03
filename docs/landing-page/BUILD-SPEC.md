@@ -105,8 +105,9 @@ year-round. The dashboard stays exactly as described above: pull-based, public, 
 
 ### Alert rules (decided Sep 23, 2026; see `docs/alert-rules-decisions.md`)
 - **Two levels only:** Safe / Unsafe at 235 CFU/100 mL. No Caution level.
-- **Sewer overflow:** active CSO overflow near the reach (if CSOcast is usable) forces Unsafe and
-  lowers confidence. The message names the reason; never show a bacteria value we do not have.
+- **Sewer overflow:** active CSO overflow near the reach (if CSOcast is usable) forces Unsafe.
+  The message names the reason; never show a bacteria value we do not have. (Amended 2026-10-03:
+  it does NOT alter the confidence, which is always the rule/model agreement.)
 - **Freshness:** newest gauge reading older than **2 hours** -> status "unavailable", no message,
   never an all-clear. Rainfall-only fallback may still run.
 - **Change of state only:** alert when the level differs from the last alerted state.

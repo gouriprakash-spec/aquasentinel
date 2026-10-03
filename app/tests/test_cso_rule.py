@@ -24,7 +24,7 @@ def test_escalates_safe_to_unsafe_when_an_outfall_is_overflowing():
     result = apply_cso_escalation("Safe", 0.9, [_outfall(status=4)])
 
     assert result["risk_tier"] == "Unsafe"
-    assert result["confidence"] == config.CSO_OVERRIDE_CONFIDENCE
+    assert result["confidence"] == 0.9  # rule/model agreement, never altered by the overflow
     assert result["decision_basis"] == "cso_overflow_rule"
     assert result["triggered_outfall"].name == "D_test"
 
@@ -67,12 +67,11 @@ def test_empty_outfall_list_leaves_everything_unchanged():
     assert result["triggered_outfall"] is None
 
 
-def test_triggering_on_an_already_unsafe_reading_still_overwrites_confidence_and_basis():
-    """One-directional escalation: CSO can't change an already-Unsafe tier, but Milestone 8's
-    sampling trigger reads confidence, not tier - confidence/decision_basis must still reflect
-    that CSO is what's actually current, even though the tier value itself doesn't change."""
+def test_triggering_on_an_already_unsafe_reading_keeps_the_real_confidence_and_records_the_basis():
+    """The overflow can't change an already-Unsafe tier, and it never touches the confidence:
+    that number is the rule/model agreement and must show exactly that (Gouri, 2026-10-03)."""
     result = apply_cso_escalation("Unsafe", 0.91, [_outfall(status=4)])
 
-    assert result["risk_tier"] == "Unsafe"  # unchanged value...
-    assert result["confidence"] == config.CSO_OVERRIDE_CONFIDENCE  # ...but overwritten anyway
+    assert result["risk_tier"] == "Unsafe"
+    assert result["confidence"] == 0.91  # untouched
     assert result["decision_basis"] == "cso_overflow_rule"

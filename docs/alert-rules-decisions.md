@@ -10,6 +10,12 @@ Decisions made one at a time on Sep 23, 2026, and applied to `docs/product-brief
   and never shows or implies a measured or modeled bacteria value it does not have.
 - Consequence: the "improved to Caution" case in the flowchart goes away; any Unsafe → Safe
   change goes through the all-clear waiting window.
+- **Amended 2026-10-03:** the overflow no longer lowers confidence. The confidence figure is the
+  rule/model agreement and must display exactly that; an overflow changes only the tier and the
+  stated reason. (It had been overwritten with a fixed placeholder, 0.3, so a sampling request
+  would trigger; that feature was cut, and the placeholder misled readers: on 2026-10-03 the
+  dashboard showed "30%" next to an overflow-decided Unsafe whose real agreement was 86-91%.)
+  The placeholder constant was removed, and stored rows carrying it are corrected at startup.
 
 ## 2. Off-season → agency always, public paused
 - Decision: RPHSA receives every FHIR Flag change (active and inactive) year-round. Only public

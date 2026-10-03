@@ -88,6 +88,7 @@ def init_db(db_path: Path | None = None) -> None:
     with _connect(db_path) as conn:
         conn.executescript(_SCHEMA)
         _migrate_cso_columns(conn)
+        _correct_legacy_cso_confidence(conn)
 
 
 def _migrate_cso_columns(conn: sqlite3.Connection) -> None:
@@ -136,6 +137,38 @@ def _reading_columns(reading: dict) -> dict:
         "regime": reading["regime"],
         "retrieved_at": reading["retrieved_at"],
     }
+
+
+# Before 2026-10-03 the overflow rule overwrote a reading's confidence with this fixed
+# placeholder. It is not a measurement, and it is not the confidence any more (see
+# app/model/cso_rule.py), but stored rows from that period still carry it.
+_LEGACY_CSO_PLACEHOLDER_CONFIDENCE = 0.3
+
+
+def _correct_legacy_cso_confidence(conn: sqlite3.Connection) -> None:
+    """Replace the old placeholder on overflow-decided rows with the real rule/model agreement.
+
+    The real value is exactly recomputable from what the row already stores: the rainfall rule's
+    verdict (precip_prev_48h_mm vs rule_threshold_mm) and the model's probability of Unsafe -
+    the same formula app/scoring/pull_reading.py uses. Touches ONLY overflow-decided rows that
+    still hold the placeholder and have every input; anything else is left as it is (never
+    guessed). Idempotent: once corrected, a row no longer matches.
+    """
+    conn.execute(
+        """
+        UPDATE readings
+        SET confidence = ROUND(
+            CASE WHEN precip_prev_48h_mm >= rule_threshold_mm
+                 THEN model_probability_unsafe
+                 ELSE 1.0 - model_probability_unsafe END, 3)
+        WHERE decision_basis = 'cso_overflow_rule'
+          AND confidence = ?
+          AND model_probability_unsafe IS NOT NULL
+          AND precip_prev_48h_mm IS NOT NULL
+          AND rule_threshold_mm IS NOT NULL
+        """,
+        (_LEGACY_CSO_PLACEHOLDER_CONFIDENCE,),
+    )
 
 
 def insert_reading(reading: dict, db_path: Path | None = None) -> int:

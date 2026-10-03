@@ -88,7 +88,7 @@ def test_mcp_status_and_readings_agree_on_tier_and_timestamp(monkeypatch, tmp_pa
 
 def _fake_cso_reading() -> dict:
     reading = _fake_reading("Unsafe")
-    reading["confidence"] = 0.3
+    reading["confidence"] = 0.86  # real rule/model agreement; the overflow does not alter it
     reading["evidence"]["decision_basis"] = "cso_overflow_rule"
     reading["evidence"]["cso_status"] = {
         "outfall_name": "D_25", "status": 3, "distance_km": 4.33,
@@ -114,7 +114,7 @@ def test_mcp_status_and_readings_agree_on_a_cso_escalated_reading(monkeypatch, t
 
     for surface in (status_body, mcp_result):
         assert surface["risk_tier"] == "Unsafe"
-        assert surface["confidence"] == readings[0]["confidence"] == 0.3
+        assert surface["confidence"] == readings[0]["confidence"] == 0.86
         assert surface["decision_basis"] == readings[0]["decision_basis"] == "cso_overflow_rule"
         assert surface["cso_status"]["outfall_name"] == readings[0]["cso_outfall_name"] == "D_25"
         assert surface["cso_status"]["status"] == readings[0]["cso_outfall_status"] == 3
