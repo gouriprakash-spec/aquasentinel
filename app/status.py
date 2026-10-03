@@ -87,3 +87,37 @@ def current_status(row: dict | None) -> dict:
         }
 
     return build_status_contract(row)
+
+
+def _parse_utc(value: str) -> datetime:
+    parsed = datetime.fromisoformat(value)
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
+
+
+def annotate_freshness(rows: list[dict], now: datetime | None = None) -> list[dict]:
+    """Copies of newest-first stored rows, each tagged with `gauge_age_hours` and `stale`.
+
+    Lets the dashboard flag a stale reading without hard-coding the limit in JavaScript (the
+    server decides, from config.FRESHNESS_LIMIT_HOURS). Two deliberate rules:
+    - The NEWEST row is judged against now - exactly what current_status() does, so a "stale"
+      note on the banner and an "unavailable" status can never disagree.
+    - Older rows are judged against when they were CHECKED (retrieved_at). Judged against now,
+      every historical row would read stale just because time has passed.
+    A timestamp that cannot be read fails closed: stale, with no age.
+    """
+    now = now or datetime.now(timezone.utc)
+    limit = timedelta(hours=config.FRESHNESS_LIMIT_HOURS)
+    annotated = []
+    for index, row in enumerate(rows):
+        copy = dict(row)
+        try:
+            reading_time = _parse_utc(row["reading_time"])
+            judged_at = now if index == 0 else _parse_utc(row["retrieved_at"])
+            age = max(judged_at - reading_time, timedelta(0))  # clock skew never gives a negative age
+            copy["gauge_age_hours"] = round(age.total_seconds() / 3600, 1)
+            copy["stale"] = age > limit
+        except (KeyError, TypeError, ValueError):
+            copy["gauge_age_hours"] = None
+            copy["stale"] = True
+        annotated.append(copy)
+    return annotated

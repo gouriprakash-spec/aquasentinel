@@ -79,12 +79,16 @@
   /* toolbar */
   .toolbar{display:flex;align-items:center;justify-content:space-between;gap:20px;}
   .toolbar .sub{font-size:13px;color:var(--muted);margin-top:3px;line-height:1.5;}
+  .stale-note{display:inline-block;margin-left:8px;padding:2px 9px;border-radius:6px;font-weight:600;color:var(--amberink);background:var(--amberbg);border:1px solid var(--amberline);}
   .pill{font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--amberink);background:var(--amberbg);border:1px solid var(--amberline);border-radius:999px;padding:6px 11px;}
   /* banner */
   .banner{border-radius:14px;padding:16px 20px;display:flex;align-items:center;gap:16px;font-size:14.5px;}
   .dot{width:12px;height:12px;border-radius:50%;}
   /* table */
-  .tablecard{overflow:hidden;}
+  /* overflow-x:auto (was hidden): on a phone the 13-column table is wider than the screen, and
+     hidden clipped the right-hand columns (CSO, STATUS) with no way to reach them. y stays
+     hidden so the card's rounded corners still clip. */
+  .tablecard{overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;}
   table{border-collapse:collapse;width:100%;}
   th,td{text-align:left;}
   thead tr{background:#F7F9F9;border-bottom:1px solid #E4E9EA;}
@@ -149,7 +153,6 @@
     <div style="flex:1;min-width:0;">
       <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
         <div class="disp" style="font-size:20px;font-weight:600;">Live readings</div>
-        <span class="pill">UPDATED HOURLY</span>
       </div>
       <div class="sub">Each pull reads live data from the <strong>USGS Penn's Landing gauge (01467200)</strong>
         and the <strong>PHL weather station</strong> (or the Open-Meteo weather model when the
@@ -178,6 +181,7 @@
     <table>
       <thead>
         <tr>
+          <th>DATE</th>
           <th>TIME</th>
           <th>RAIN TODAY <span class="u">mm</span></th>
           <th>RAIN 24H <span class="u">mm</span></th>
@@ -305,6 +309,15 @@
     return ("0"+d.getHours()).slice(-2) + ":" + ("0"+d.getMinutes()).slice(-2);
   }
 
+  // Same viewer-local clock as formatTime, so DATE and TIME read as a pair.
+  function formatDate(isoString){
+    return new Date(isoString).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  }
+
+  function formatDateTime(isoString){
+    return new Date(isoString).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  }
+
   // Maps a reading into what render() draws. Accepts either shape: the nested
   // evidence.proxies/rainfall_mm contract that pull_reading() produces, or the flat
   // stored-row shape from GET /api/readings (app/db.py's columns). The page now only ever
@@ -338,9 +351,16 @@
     // When AquaSentinel last polled for this gauge reading (the real poll time, never a
     // rounded or made-up hour). Separate from `time`, which is when the gauge measured.
     var checked = reading.retrieved_at ? formatTime(reading.retrieved_at) : '&mdash;';
+    var date = reading.retrieved_at ? formatDate(reading.retrieved_at) : '&mdash;';
     return {
       time: formatTime(time),
       checked: checked,
+      date: date,
+      // Decided by the server (app/status.py annotate_freshness), not here. A row that arrives
+      // without the flag is treated as stale - the safe default.
+      stale: reading.stale !== false,
+      gaugeAgeHours: reading.gauge_age_hours,
+      gaugeMeasured: formatDateTime(time),
       cso: cso,
       rainToday: round1(rainToday),
       rain24: round1(rain24),
@@ -383,7 +403,7 @@
     if (rows.length === 0){
       b.style.background = '#F7F9F9';
       b.style.border = '1px solid #E4E9EA';
-      b.innerHTML = '<div style="color:var(--muted);">No readings yet &mdash; the first reading appears shortly after the server starts, then every hour.</div>';
+      b.innerHTML = '<div style="color:var(--muted);">No readings yet &mdash; the first reading appears shortly after the server starts.</div>';
       document.getElementById('tbody').innerHTML = '';
       return;
     }
@@ -414,7 +434,15 @@
       reasonClause +
       ' &middot; Center City reach &middot; '+latest.time+
       ' <span style="color:var(--faint);">&middot; Source: AquaSentinel estimate' +
-      (latest.rainSource ? '; rain from '+latest.rainSource : '') + '</span></div>';
+      (latest.rainSource ? '; rain from '+latest.rainSource : '') + '</span>' +
+      // The banner keeps showing the most recent reading; when the server says it is stale, say so
+      // right here (the status API still reports "unavailable" for it).
+      (latest.stale
+        ? '<span class="stale-note">Stale: the gauge last measured '+latest.gaugeMeasured +
+          ((latest.gaugeAgeHours !== null && latest.gaugeAgeHours !== undefined) ? ' ('+latest.gaugeAgeHours+' h ago)' : '') +
+          '</span>'
+        : '') +
+      '</div>';
     document.getElementById('ruleThreshold').innerHTML = latest.ruleThreshold;
 
     // table
@@ -425,6 +453,7 @@
       var rowbg = (i===0) ? 'background:#F3FAF7;' : '';
       html +=
         '<tr style="'+rowbg+'">' +
+        '<td class="mono" style="white-space:nowrap;">'+r.date+'</td>' +
         '<td class="mono">'+r.checked+'</td>' +
         '<td class="mono">'+r.rainToday+'</td>' +
         '<td class="mono">'+r.rain24+'</td>' +

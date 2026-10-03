@@ -32,7 +32,7 @@ from app.fhir import store as fhir_store
 from app.ingestion.nws import RainfallUnavailable
 from app.ingestion.usgs import UsgsDataUnavailable
 from app.scoring.pull_reading import LOCATION_ID, pull_reading
-from app.status import current_status
+from app.status import annotate_freshness, current_status
 
 LANDING_PAGE_DIR = Path(__file__).resolve().parents[1] / "docs" / "landing-page"
 DATASET_DATE_MODIFIED_TOKEN = "__AQUASENTINEL_DATASET_DATE_MODIFIED__"
@@ -117,8 +117,10 @@ def llms_txt() -> FileResponse:
 
 @app.get("/api/readings")
 def api_readings(limit: int = 9) -> list[dict]:
-    """Recent stored readings, newest first - what the dashboard reads on load."""
-    return db.get_recent_readings(limit=limit)
+    """Recent stored readings, newest first - what the dashboard reads on load. Each row also
+    carries `gauge_age_hours` and `stale` (see app.status.annotate_freshness), so the page can
+    flag a stale reading without knowing the freshness limit itself."""
+    return annotate_freshness(db.get_recent_readings(limit=limit))
 
 
 @app.get("/api/status")
