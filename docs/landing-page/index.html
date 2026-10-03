@@ -104,6 +104,10 @@
      third of the card). The card - and the intro card beside it - grow to fit. */
   .mapbox{position:relative;flex:1;min-height:520px;}
   @media (max-width:860px){ .hero{flex-direction:column;} .mapbox{min-height:420px;} }
+  /* The script crops the map to Ardmore-Woodbury, which makes the map card shorter than the intro card;
+     align to the top so it is not stretched back to the intro card's height. (Desktop only: in the
+     stacked phone layout the cross axis is the width.) */
+  @media (min-width:861px){ .hero{align-items:flex-start;} }
 </style>
 </head>
 <body>
@@ -260,6 +264,32 @@
       // animate:false - Leaflet silently drops a fitBounds that arrives while a zoom animation is running,
       // which left the map at a stale zoom when the resize re-framing came right after the first one.
       map.fitBounds(bounds, narrowMap ? { padding: [30, 30], animate: false } : { paddingTopLeft: [170, 20], paddingBottomRight: [140, 20], animate: false });
+      cropToArdmoreWoodbury();
+    }
+    // Gouri, 2026-10-03: land north of Ardmore and south of Woodbury is not relevant and only eats
+    // space. The zoom is chosen above (by width); here the frame is made exactly tall enough for
+    // Ardmore at the top edge and Woodbury at the bottom, plus a margin (36px, so the Esri credit bar does not cover the Woodbury label), and
+    // the view is centred between them. Only in the side-by-side desktop layout (the same 861px break as
+    // the CSS): when the cards stack, the map is full width, the zoom is higher, and Ardmore-to-Woodbury
+    // would be taller than the page wants, so the stacked layout keeps its CSS height.
+    var ARDMORE_LAT = 40.0068, WOODBURY_LAT = 39.8384;
+    function cropToArdmoreWoodbury(){
+      var frame = document.querySelector('.mapbox');
+      if (!window.matchMedia('(min-width:861px)').matches){
+        frame.style.flex = frame.style.minHeight = frame.style.height = '';  // back to the CSS sizes
+        return;
+      }
+      var zoom = map.getZoom();
+      var centre = map.getCenter();
+      var spanPixels = map.project([WOODBURY_LAT, centre.lng], zoom).y - map.project([ARDMORE_LAT, centre.lng], zoom).y;
+      var height = Math.round(spanPixels) + 2 * 36;
+      if (Math.abs(frame.offsetHeight - height) > 1){
+        frame.style.flex = 'none';
+        frame.style.minHeight = '0';
+        frame.style.height = height + 'px';
+        map.invalidateSize();  // the frame changed; the ResizeObserver below re-frames once more, and settles
+      }
+      map.setView([(ARDMORE_LAT + WOODBURY_LAT) / 2, centre.lng], zoom, { animate: false });
     }
     frameMap();
     // The map frame stretches with the intro card next to it, whose height settles after the web

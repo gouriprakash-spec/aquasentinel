@@ -328,3 +328,18 @@ def test_the_map_is_framed_without_animation_so_a_second_framing_is_never_droppe
 
     assert "padding: [30, 30], animate: false" in page
     assert "paddingBottomRight: [140, 20], animate: false" in page
+
+
+def test_the_map_is_cropped_to_run_from_ardmore_to_woodbury(monkeypatch, tmp_path):
+    """Gouri, 2026-10-03: the map showed a lot of land north of Ardmore and south of Woodbury that
+    is not relevant. The page sizes the map frame so its top edge is Ardmore (plus a small margin)
+    and its bottom edge Woodbury, and centres the view between them. The desktop cards then align to
+    the top so the shorter map card is not stretched back to the intro card's height."""
+    client = _client(monkeypatch, tmp_path)
+
+    page = client.get("/").text
+
+    assert "ARDMORE_LAT" in page and "WOODBURY_LAT" in page
+    assert "40.0068" in page and "39.8384" in page
+    assert "map.project(" in page  # the frame height comes from the actual zoom, not a fixed number
+    assert "@media (min-width:861px){ .hero{align-items:flex-start;} }" in page
