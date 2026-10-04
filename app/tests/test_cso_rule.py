@@ -67,11 +67,14 @@ def test_empty_outfall_list_leaves_everything_unchanged():
     assert result["triggered_outfall"] is None
 
 
-def test_triggering_on_an_already_unsafe_reading_keeps_the_real_confidence_and_records_the_basis():
+def test_triggering_on_an_already_unsafe_reading_keeps_the_real_confidence_and_records_both_reasons():
     """The overflow can't change an already-Unsafe tier, and it never touches the confidence:
-    that number is the rule/model agreement and must show exactly that (Gouri, 2026-10-03)."""
+    that number is the rule/model agreement and must show exactly that (Gouri, 2026-10-03).
+    Since rain had already made it Unsafe, the basis names both rules, not the overflow alone
+    (Gouri, 2026-10-04)."""
     result = apply_cso_escalation("Unsafe", 0.91, [_outfall(status=4)])
 
     assert result["risk_tier"] == "Unsafe"
     assert result["confidence"] == 0.91  # untouched
-    assert result["decision_basis"] == "cso_overflow_rule"
+    assert result["decision_basis"] == "rainfall_and_cso_rules"
+    assert result["triggered_outfall"].name == "D_test"  # still named, for the banner and FHIR

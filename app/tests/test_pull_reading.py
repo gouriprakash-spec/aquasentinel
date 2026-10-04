@@ -255,7 +255,9 @@ def test_cso_trigger_on_an_already_unsafe_reading_keeps_the_real_confidence_and_
 
     assert reading["risk_tier"] == "Unsafe"
     assert reading["confidence"] == same_pull_without_overflow["confidence"]
-    assert reading["evidence"]["decision_basis"] == "cso_overflow_rule"
+    # 50 mm of rain already made it Unsafe, so both rules are named (Gouri, 2026-10-04).
+    assert reading["evidence"]["decision_basis"] == "rainfall_and_cso_rules"
+    assert reading["evidence"]["cso_status"] is not None
 
 
 def test_overflow_does_not_change_the_rule_model_agreement_exactly(monkeypatch):

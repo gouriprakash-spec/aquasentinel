@@ -126,6 +126,9 @@ def build_rainfall_observation(reading: dict) -> dict:
     return {"fullUrl": f"urn:uuid:{uuid.uuid4()}", "resource": resource}
 
 
+# decision_basis values where a sewer overflow is (one of) the reason(s) for the tier.
+CSO_DECIDED_BASES = ("cso_overflow_rule", "rainfall_and_cso_rules")
+
 CSO_STATUS_DISPLAY = {
     3: "Overflow occurred in the past 72 hours",
     4: "Currently overflowing",
@@ -152,7 +155,7 @@ def build_cso_observation(reading: dict) -> dict:
         "effectiveDateTime": reading["time"],
         "valueCodeableConcept": {"text": evidence.get("cso") or "Reading unavailable"},
     }
-    if evidence.get("decision_basis") == "cso_overflow_rule":
+    if evidence.get("decision_basis") in CSO_DECIDED_BASES:
         cso = evidence["cso_status"]
         status_text = CSO_STATUS_DISPLAY.get(cso["status"], f"Status {cso['status']}")
         resource["note"] = [{
@@ -167,6 +170,10 @@ RISK_METHOD_TEXT = {
     "cso_overflow_rule": (
         "Estimated risk: active/recent combined-sewer overflow near the reach overrides "
         "the rainfall rule"
+    ),
+    "rainfall_and_cso_rules": (
+        "Estimated risk: the rainfall rule and an active/recent combined-sewer overflow "
+        "near the reach both indicate Unsafe"
     ),
 }
 
@@ -239,7 +246,7 @@ def build_bundle(reading: dict, flag: dict) -> dict:
     cso_entry = build_cso_observation(reading)
     # The tier is only "derived from" the CSO observation when CSO actually decided it; in
     # every other case the CSO value is reported alongside, but is not what the tier came from.
-    cso_decided_entry = cso_entry if decision_basis == "cso_overflow_rule" else None
+    cso_decided_entry = cso_entry if decision_basis in CSO_DECIDED_BASES else None
     risk_entry = build_risk_observation(reading, proxy_entries, rainfall_entry, cso_decided_entry)
     flag_entry = {"fullUrl": f"urn:uuid:{uuid.uuid4()}", "resource": flag}
 

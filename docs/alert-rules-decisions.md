@@ -8,6 +8,13 @@ Decisions made one at a time on Sep 23, 2026, and applied to `docs/product-brief
   and lowers confidence (which also triggers a sampling request). No "Caution" level.
 - Guardrail: an overflow-driven Unsafe says why ("sewer overflow under way near Penn's Landing"),
   and never shows or implies a measured or modeled bacteria value it does not have.
+- **Amended 2026-10-04 (Gouri approved):** when an outfall triggers but the rainfall rule had
+  *already* said Unsafe, the overflow decided nothing on its own, so the reason is no longer
+  "sewer overflow" alone. `decision_basis` is `rainfall_and_cso_rules`: the banner shows the rain
+  total and the outfall, and the FHIR risk Observation's method text and `derivedFrom` name both.
+  `cso_overflow_rule` is kept for the case this decision was written for (overflow flips a Safe
+  reading to Unsafe). Found on the live site: 4.6 mm of rain (a lower bound) plus an overflow at
+  D_23 was shown as an overflow-only reason.
 - Consequence: the "improved to Caution" case in the flowchart goes away; any Unsafe → Safe
   change goes through the all-clear waiting window.
 - **Amended 2026-10-03:** the overflow no longer lowers confidence. The confidence figure is the

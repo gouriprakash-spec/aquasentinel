@@ -265,6 +265,25 @@ def test_risk_observation_method_describes_cso_override_when_it_decided_the_tier
     assert "overflow" in method_text or "sewer" in method_text
 
 
+def test_when_rain_and_overflow_both_fired_the_record_names_both_and_derives_from_both():
+    """Rain alone already made it Unsafe and an outfall is also overflowing (Gouri, 2026-10-04):
+    the agency must see both reasons, with the rain value first and the outfall in a note."""
+    reading = _cso_reading()
+    reading["evidence"]["decision_basis"] = "rainfall_and_cso_rules"
+    flag = resources.build_flag("flag-1", "Unsafe", "active", "2026-06-01T12:00:00+00:00", None)
+    bundle = resources.build_bundle(reading, flag)
+
+    risk = _risk_entry(bundle)["resource"]
+    method_text = risk["method"]["text"].lower()
+    assert "rainfall" in method_text and "overflow" in method_text
+
+    by_url = {e["fullUrl"]: e["resource"] for e in bundle["entry"]}
+    derived = [by_url[d["reference"]] for d in risk["derivedFrom"]]
+    assert derived[0]["code"]["text"].startswith("Precipitation")
+    cso = next(r for r in derived if r["code"]["text"] == "Combined sewer outfall overflow status")
+    assert "D_25" in cso["note"][0]["text"]  # the triggering outfall is named
+
+
 def test_risk_observation_derived_from_includes_the_cso_entry_when_present():
     flag = resources.build_flag("flag-1", "Unsafe", "active", "2026-06-01T12:00:00+00:00", None)
     bundle = resources.build_bundle(_cso_reading(), flag)

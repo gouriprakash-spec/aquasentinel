@@ -39,8 +39,10 @@ def apply_cso_escalation(
 ) -> dict:
     """Return {risk_tier, confidence, decision_basis, triggered_outfall}.
 
-    decision_basis is "cso_overflow_rule" when an outfall triggered, else None - the caller
-    keeps whatever decision_basis it already had (e.g. "rainfall_rule") in that case.
+    decision_basis is "cso_overflow_rule" when an outfall triggered and the overflow is what made
+    the tier Unsafe, "rainfall_and_cso_rules" when an outfall triggered but the rain rule had
+    already said Unsafe, else None - the caller keeps whatever decision_basis it already had
+    (e.g. "rainfall_rule") in that case.
 
     `confidence` is passed through UNCHANGED. It is the rule/model agreement, and it must show
     exactly that: an overflow changes the tier and the stated reason, never the agreement figure
@@ -61,9 +63,13 @@ def apply_cso_escalation(
             "triggered_outfall": None,
         }
 
+    # When the rain rule had already said Unsafe, the overflow did not decide anything on its own:
+    # crediting only the overflow would hide the rain that independently crossed the threshold
+    # (Gouri, 2026-10-04). Record both reasons instead.
+    decision_basis = "rainfall_and_cso_rules" if risk_tier == "Unsafe" else "cso_overflow_rule"
     return {
         "risk_tier": "Unsafe",
         "confidence": confidence,
-        "decision_basis": "cso_overflow_rule",
+        "decision_basis": decision_basis,
         "triggered_outfall": triggered,
     }
