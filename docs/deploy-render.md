@@ -90,9 +90,8 @@ The last call should return an `initialize` result, not `421`.
   `get_current_status`. Check the answer keeps the word "estimate".
 - **Claude.ai / ChatGPT custom connectors:** same URL, no authentication. Availability depends on
   plan; not verified here.
-- **Meta Muse (only if you get access):** Custom connector, MCP, auth "none". Third-party sources
-  say this is supported; **not verified against Meta's docs and not tested.** Do not claim it works
-  until you have seen it work.
+- **Meta Muse:** Custom connector, MCP, auth "none". Tested by Gouri (2026-10-04): Muse connects to
+  this URL and answers from `get_current_status`.
 
 Frame every demo as polling: a person asks their own assistant; AquaSentinel sends nothing to
 anyone (see the no-public-alerting decision in `plan.md`).
@@ -110,4 +109,4 @@ Flag delivery locally in the video, with both processes running.
   comes from rainfall and sewer overflow, and the water-quality columns and rule/model agreement read
   "n/a". Missing rainfall data still records nothing, and the status then goes "unavailable".
 - SQLite without a disk (step 3b skipped): history resets on restart or redeploy.
-- Muse is untested; Claude is the primary demo assistant.
+- Muse is tested and is the demo assistant; Claude reads the same MCP endpoint.

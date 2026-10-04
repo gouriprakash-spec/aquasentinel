@@ -154,8 +154,7 @@ Build top to bottom. If behind on Oct 1, **cut from the bottom, never the middle
 10. **Oct 3–4 — reserved.** Demo video, public repo, submission text. Not build time. The demo
     shows an outside personal assistant (Meta's Muse, over WhatsApp) polling AquaSentinel's
     read-only MCP server for a reading — framed as "a person asks their assistant", never as
-    AquaSentinel alerting anyone. Planned, not yet tested: it needs the app deployed to a public
-    host (Render), the MCP hostname allowlist updated, and Muse access; Claude or ChatGPT
+    AquaSentinel alerting anyone. Tested 2026-10-04 against the app deployed on Render; Claude
     calling the same endpoint is the fallback.
 
 ## Technical Approach

@@ -190,10 +190,10 @@ Build for real:
 - Deterministic validation and gating, including the fail-closed path.
 - The OAH-conformant Observation, the `Flag` alert, and real FHIR `Subscription` mechanics to the stubbed RPHSA system.
 
-Demonstrated (planned, not yet tested):
+Demonstrated:
 
 - Outside AI assistants polling AquaSentinel's read-only MCP server for the current reading: Claude
-  (connected over MCP) and Meta's Muse (access and connector support not yet confirmed). A person asks
+  (connected over MCP) and Meta's Muse (tested 2026-10-04). A person asks
   their assistant; AquaSentinel pushes nothing.
 
 Cut from the build, designed only (see Future directions):
@@ -213,7 +213,7 @@ Acceptable to mock or stub:
 Revised 2026-10-04 (Gouri): the video opens with Gouri on camera, then goes straight to Muse answering from the MCP server; the rest explains where that answer came from. The planned historical replay with a demo clock was dropped (it was never built). Record when a recent reading exists: readings come only from the hourly scheduler (there is no pull button and no startup pull), and the page's table shows only the newest 9 rows. The video is silent, so the intro and the Muse question appear as on-screen text.
 
 0. **Intro, on camera (about 0:20).** Gouri introduces themself and the project in one or two sentences.
-1. **Ask Muse (about 0:45).** With the connector already installed, ask Muse "Is the Delaware at Penn's Landing safe for kayaking right now?" Show it calling `get_current_status` and answering with the word "estimate" kept. AquaSentinel pushes nothing; a person asks their own assistant. (Muse is untested; do a trial run first. If it does not connect on the day, show Claude instead.)
+1. **Ask Muse (about 0:45).** With the connector already installed, ask Muse "Is the Delaware at Penn's Landing safe for kayaking right now?" Show it calling `get_current_status` and answering with the word "estimate" kept. AquaSentinel pushes nothing; a person asks their own assistant. (Muse was tested 2026-10-04. If it does not connect on the day, show Claude instead.)
 2. **Where the answer comes from: the dashboard (about 0:50).** The same reading and its banner, the hourly table (point out the "≥" on the rain total when some hourly reports were missing, and the "n/a" in the water-quality columns when the USGS sensors are silent), and the outfall map. The status is still given when the gauge is silent: the gauge only feeds the model's agreement figure.
 3. **How the status is decided (about 0:35).** The rainfall rule, the sewer-overflow rule that can only raise the status, and the model that only reports agreement. Code decides, agents do not.
 4. **The agent-ready layer and how to connect (about 0:40).** `/api/status`, `/api/readings?limit=24` for the day's history, and `/llms.txt`: the same numbers, no scraping. Then show how an assistant connects to the read-only MCP server (no login, three read-only tools: `list_monitored_locations`, `get_current_status`, `get_recent_readings`). Install in Claude Code with one command: `claude mcp add --transport http aquasentinel https://aquasentinel-prc9.onrender.com/mcp`. For a custom connector (Muse, or Claude.ai), add a remote MCP server with that same URL and authentication set to "none".
