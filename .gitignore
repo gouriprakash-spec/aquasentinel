@@ -32,3 +32,6 @@ CLAUDE.local.md
 
 # Playwright MCP scratch output (screenshots, console logs, page snapshots)
 .playwright-mcp/
+
+# Old pre-review copies of the brief, data dictionary and dataset (kept locally only)
+AquaSentinel-dataset/_review-backup_2026-09-19/

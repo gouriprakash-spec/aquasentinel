@@ -110,6 +110,10 @@ baseline reporting **precision/recall on the unsafe class**, not R², with
 stratified cross-validation — and why the agency-sampling loop (which manufactures
 new positive labels where the model is unsure) matters.
 
+*As built (2026-10-04): the live model is the near-shore one (69 days, 30 unsafe; see the
+addendum below), a rainfall rule decides the tier, and the agency-sampling loop was cut
+2026-10-02 (a Future direction).*
+
 ## Honest caveats (read before modeling)
 
 1. **Cross-agency, cross-location join.** Proxies (USGS, mid-channel at Penn's
@@ -134,10 +138,10 @@ new positive labels where the model is unsure) matters.
    excluded from both regime training files by the same drop-all-proxy-null rule.
    Earlier builds applied that rule to regime A only, leaving 4 feature-less rows in
    regime B — corrected 2026-09-19 (regime B: 64 → 60).
-8. **Turbidity raw not in `raw/`.** (Restored 2026-09-27; daily aggregates match regime B exactly.) `usgs_iv_turbidity_raw.csv` is large and is not
-   currently kept in `raw/`, so an offline rebuild reproduces every column except
-   turbidity (the builder now degrades gracefully and warns). Run
-   `build_dataset.py --fetch` to restore turbidity and rebuild end-to-end.
+8. **Turbidity raw is large.** `usgs_iv_turbidity_raw.csv` (about 20 MB) is kept in `raw/`
+   (restored 2026-09-27; its daily aggregates match regime B exactly). If it is ever missing,
+   an offline rebuild reproduces every column except turbidity (the builder degrades
+   gracefully and warns); run `build_dataset.py --fetch` to restore it and rebuild end-to-end.
 
 ## Addendum 2026-09-27 — `data/nearshore_labels.csv` (Milestone 1b, approved and shipped)
 
