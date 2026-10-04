@@ -116,8 +116,9 @@ year-round. The dashboard stays exactly as described above: pull-based, public, 
 - **All-clear:** only after **48 continuous hours** of Safe; any Unsafe reading restarts the clock.
 - **Agency delivery:** FHIR Flag changes go to RPHSA **year-round** — the only notification
   channel that exists (no public alerting; see the section above).
-- **Still to derive:** low-confidence cutoff (from model validation), forecast rain threshold T
-  (from our rainfall data), CSO outfall set near Penn's Landing (research).
+- **Still to derive:** forecast rain threshold T (from our rainfall data). Resolved: the
+  low-confidence cutoff (2026-09-27) and the CSO outfall set, a 5 km radius from Penn's Landing
+  (2026-10-01); see `docs/alert-rules-decisions.md`.
 
 ## TODO 2 — make the site agent-ready
 AquaSentinel should be a site agents can read reliably. Every surface below is generated from
@@ -149,8 +150,8 @@ the **same scoring output** as the banner and table; never compute status twice.
    draws it on the map and never calls CSOcast itself. A feed outage keeps the previous snapshot.
 7. **Not in scope:** WebMCP (W3C community-group draft, Sep 2026; browser-bound).
 
-How the Advisory Reader Agent consumes sources (for the separate agent build): prefer a
-source's MCP server, then a structured feed advertised in `llms.txt`, then the HTML page
+How the Advisory Reader Agent would consume sources (designed, not built: cut 2026-10-02, see
+`docs/product-brief.md`'s Future directions): prefer a source's MCP server, then a structured feed advertised in `llms.txt`, then the HTML page
 (legacy mode, heavier validation).
 
 ## Honesty guardrails (keep these in the copy)

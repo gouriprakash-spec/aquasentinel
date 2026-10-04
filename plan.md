@@ -151,6 +151,7 @@ Build top to bottom. If behind on Oct 1, **cut from the bottom, never the middle
    not a reopening of the "no direct-to-public alerting" scope decision above** — the audience is
    internal only, never river users or the general public, and RPHSA's FHIR delivery (milestone 4)
    stays the only public-health notification channel. Confirmed with Gouri 2026-09-27.
+   **Neither stretch item was built** (status as of 2026-10-04).
 10. **Oct 3–4 — reserved.** Demo video, public repo, submission text. Not build time. The demo
     shows an outside personal assistant (Meta's Muse, over WhatsApp) polling AquaSentinel's
     read-only MCP server for a reading — framed as "a person asks their assistant", never as
