@@ -184,17 +184,17 @@ Caveats we state up front:
 Build for real:
 
 - USGS + DRBC + NCEI ingestion and the paired tidal-Delaware training set (two regimes) — done.
-- A first prediction model — tree ensemble with an MLR baseline and a rules fallback.
-- The dashboard: a real scheduled `pull_reading()` (on the hour, not at startup) and the machine-readable status endpoint (per `docs/landing-page/BUILD-SPEC.md`).
+- The status decision: a disclosed rainfall rule (at least 2.5 mm over the two previous calendar days) decides Safe/Unsafe; a random forest trained on 69 near-shore sampled days only reports the rule/model agreement; and a combined-sewer overflow rule (CSOcast) can only escalate to Unsafe. Done.
+- The dashboard: a real scheduled `pull_reading()` (on the hour, not at startup) from live USGS, NWS (Open-Meteo as a fallback) and CSOcast data, the hourly readings table, the outfall map, and the machine-readable status endpoint (per `docs/landing-page/BUILD-SPEC.md`). Deployed on Render with a persistent disk.
 - The agent-ready layer: a read-only MCP server, `llms.txt`, and JSON-LD, all served from the same scoring output.
 - Deterministic validation and gating, including the fail-closed path.
 - The OAH-conformant Observation, the `Flag` alert, and real FHIR `Subscription` mechanics to the stubbed RPHSA system.
 
 Demonstrated (planned, not yet tested):
 
-- An outside AI assistant polling AquaSentinel's read-only MCP server for the current reading:
-  Claude, connected over MCP, is the primary plan; Meta's Muse only if access is available (untested).
-  A person asks their assistant; AquaSentinel pushes nothing.
+- Outside AI assistants polling AquaSentinel's read-only MCP server for the current reading: Claude
+  (connected over MCP) and Meta's Muse (access and connector support not yet confirmed). A person asks
+  their assistant; AquaSentinel pushes nothing.
 
 Cut from the build, designed only (see Future directions):
 
@@ -210,7 +210,15 @@ Acceptable to mock or stub:
 
 ## Demo script (3–5 min video)
 
-Open on the WHYY problem and the "day after rain" gap. Show the dashboard's latest reading from the Penn's Landing gauge (pulled live by the server's hourly scheduler: show its timestamp and the server's pull log - there is no visitor-facing pull button and no startup pull, so nothing forces a refresh on demand; record when a recent reading exists), and show that same status readable through the MCP server / `/api/status` — the same numbers, agent-ready, no scraping required. Then replay a historical rainfall/CSO event (demo clock set to the replayed weekend) so the tier flips to Unsafe. Show a personal assistant (Muse, over WhatsApp) asked "is the river safe right now?" and answering from AquaSentinel's read-only MCP server, with the estimate's caveats intact. Show validation passing, then a deliberately stale or malformed response failing closed ("status unavailable," no message). On the valid change of state, show the real FHIR `Subscription` handshake between AquaSentinel and the RPHSA stub, and the resulting `Flag` delivered to RPHSA, year-round — the one and only notification path, agency-first. Close on portability, the deliberate absence of any public alerting, and the one-sentence pitch.
+Revised 2026-10-04 (Gouri): the planned historical replay with a demo clock was dropped (it was never built), and both Claude and Meta's Muse are shown polling the MCP server. Record when a recent reading exists: readings come only from the hourly scheduler (there is no pull button and no startup pull), and the page's table shows only the newest 9 rows.
+
+1. **The problem (about 0:25).** Open on the WHYY problem and the "day after rain" gap: a lab culture takes 18-24 hours, so by the time a result exists the water has changed.
+2. **The dashboard (about 0:50).** The latest reading and its banner, the hourly table (point out the "≥" on the rain total when some hourly reports were missing, and the "n/a" in the water-quality columns when the USGS sensors are silent), and the outfall map. The status is still given when the gauge is silent: the gauge only feeds the model's agreement figure.
+3. **How the status is decided (about 0:35).** The rainfall rule, the sewer-overflow rule that can only raise the status, and the model that only reports agreement. Code decides, agents do not.
+4. **The agent-ready layer (about 0:40).** `/api/status`, `/api/readings?limit=24` for the day's history, and `/llms.txt`: the same numbers, no scraping.
+5. **Two assistants, one source (about 1:00).** Claude, then Muse, each asked "is the river safe right now?" and answering from AquaSentinel's read-only MCP server with the estimate's caveats intact. AquaSentinel pushes nothing; a person asks their own assistant. (Muse is untested; if it does not connect on the day, show Claude only.)
+6. **Fail closed, and the agency path (about 0:45).** Show the real gauge outage on the live site as the honest-handling example, and the tests for the closed path (missing rainfall data records nothing and never produces an all-clear). Then show the FHIR `Subscription` handshake and the resulting `Flag` delivered to the RPHSA stub, year-round, through the end-to-end tests or a local run with the stub: the one and only notification path, agency-first.
+7. **Close (about 0:20).** Honest limits (an estimate on a small validation set), portability, the deliberate absence of any public alerting, and the one-sentence pitch.
 
 ## Risks and mitigations
 
@@ -277,4 +285,4 @@ Whichever device collects the water, the sample still needs an accredited lab cu
 - [ ] Project description (problem + impact)
 - [ ] Demo video (3–5 min)
 - [ ] Public GitHub repository with code
-- [ ] Working prototype / proof-of-concept (sensor, agent-ready dashboard, reader agent in native mode, FHIR delivery to the RPHSA stub, sampling agent with one simulated loop turn)
+- [ ] Working prototype / proof-of-concept (virtual sensor, agent-ready dashboard live on Render, read-only MCP server, FHIR delivery to the RPHSA stub). The reader agent and the sampling agent are designed, not built (see Future directions).

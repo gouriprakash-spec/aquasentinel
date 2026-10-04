@@ -198,7 +198,7 @@
         <tr>
           <th>PULL DATE</th>
           <th>PULL TIME</th>
-          <th>RAIN PRIOR 2 DAYS <span class="u">mm &middot; decides status</span></th>
+          <th>RAIN PRIOR 2 DAYS <span class="u">mm</span></th>
           <th>TURBIDITY <span class="u">FNU</span></th>
           <th>TEMP <span class="u">&deg;C</span></th>
           <th>SP. COND <span class="u">&micro;S/cm</span></th>
@@ -362,9 +362,6 @@
   // dash instead.
   function fmt1(x){ return (x === null || x === undefined) ? '&mdash;' : round1(x); }
 
-  var RAIN_SOURCE_LABELS = { 'nws': 'NWS station KPHL', 'open-meteo': 'Open-Meteo weather model',
-    'nws-partial': 'NWS station KPHL (some hourly reports missing)' };
-
   function formatTime(isoString){
     var d = new Date(isoString);
     return ("0"+d.getHours()).slice(-2) + ":" + ("0"+d.getMinutes()).slice(-2);
@@ -389,7 +386,6 @@
     // The value the rainfall rule actually decided the tier on, and what it was compared to.
     var rain48 = isStored ? reading.precip_prev_48h_mm : reading.evidence.rainfall_mm.precip_prev_48h_mm;
     var ruleThreshold = isStored ? reading.rule_threshold_mm : reading.evidence.rule_threshold_mm;
-    var rainSource = isStored ? reading.rainfall_source : reading.evidence.rainfall_source;
     // When some hourly NWS reports for the two previous days were unavailable, the total is only a
     // floor (missing hours can only add rain), so the table shows ">= 4.6" and the banner says "at
     // least" - never an exact-looking number the system does not have.
@@ -437,7 +433,6 @@
       rain48Cell: rain48IsLowerBound ? '&ge;' + fmt1(rain48) : fmt1(rain48),
       rain48IsLowerBound: rain48IsLowerBound,
       ruleThreshold: fmt1(ruleThreshold),
-      rainSource: RAIN_SOURCE_LABELS[rainSource] || null,
       turb: na(proxies.turbidity_fnu),
       temp: na(proxies.water_temp_c),
       cond: na(proxies.sp_conductance_uscm),
@@ -503,9 +498,7 @@
       '<span class="dot" style="background:'+s.color+'"></span>' +
       '<div>Latest reading &mdash; <span class="disp" style="font-weight:700;color:'+s.color+'">'+latest.status+'</span>' +
       reasonClause +
-      ' &middot; Center City reach &middot; '+latest.time+
-      ' <span style="color:var(--faint);">&middot; Source: AquaSentinel estimate' +
-      (latest.rainSource ? '; rain from '+latest.rainSource : '') + '</span></div>';
+      ' &middot; Center City reach &middot; '+latest.time+'</div>';
 
     // The note under the table. Two situations, both stated plainly:
     // 1) The newest pull had no current USGS reading (gauge_available false): the tier still comes

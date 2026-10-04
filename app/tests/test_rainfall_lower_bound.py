@@ -243,4 +243,6 @@ def test_the_page_shows_a_greater_or_equal_sign_when_the_rain_total_is_a_lower_b
     assert "rainfall_missing_hours" in page          # the page reads the count the server sends
     assert "&ge;" in page.split("function toDisplayRow")[1].split("function loadRecentReadings")[0]
     assert "at least" in page                        # the banner says "at least X mm"
-    assert "nws-partial" in page and "some hourly reports missing" in page  # and the source label says why
+    # The banner no longer prints a source line (Gouri, 2026-10-04); the table's ">=" and the banner's
+    # "at least" are what say the total is a floor.
+    assert "some hourly reports missing" not in page

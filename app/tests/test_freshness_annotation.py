@@ -398,7 +398,9 @@ def test_the_table_has_no_rain_today_or_rain_24h_columns_and_stays_aligned(monke
     row_template = page[template_start:page.index("document.getElementById('tbody').innerHTML", template_start)]
 
     assert "RAIN TODAY" not in page and "RAIN 24H" not in page
-    assert "RAIN PRIOR 2 DAYS" in head and "decides status" in head   # the column that decides the status stays
+    # The one rain column left is the two-previous-days total. Its header reads just the title and the unit
+    # (Gouri, 2026-10-04: the "decides status" label was dropped).
+    assert "RAIN PRIOR 2 DAYS" in head and "decides status" not in head
     assert len(re.findall(r"<th[ >]", head)) == len(re.findall(r"<td[ >]", row_template)) == 11
 
 
@@ -430,3 +432,16 @@ def test_the_demo_label_is_a_light_blue_pill_with_dark_teal_text(monkeypatch, tm
     assert "color:var(--teal)" in rule
     assert "border-radius:16px" in rule  # a full pill on one line; a tidy rounded box when it wraps on a phone
     assert "align-self:flex-start" in rule  # inside a flex column it would otherwise stretch full width
+
+
+def test_the_banner_has_no_source_line(monkeypatch, tmp_path):
+    """Gouri, 2026-10-04: the grey "Source: AquaSentinel estimate; rain from ..." text was first moved to
+    a second line of the banner, then removed altogether. The rain source still travels in the data
+    (API, MCP, FHIR); the page just does not print it in the banner."""
+    client = _client(monkeypatch, tmp_path)
+
+    page = client.get("/").text
+
+    assert "Source: AquaSentinel" not in page
+    assert "banner-source" not in page
+    assert "RAIN_SOURCE_LABELS" not in page  # the label table only fed that line
