@@ -4,7 +4,7 @@
 
 AquaSentinel is a *virtual water-quality sensor*. Every hour it estimates whether E. coli in the Center City reach of the Delaware River is likely above the recreational safety limit (235 CFU/100 mL), flags the reach **Safe** or **Unsafe**, and publishes that estimate three ways: a public dashboard, an API and read-only MCP server that AI assistants can query, and standards-based FHIR sent to a (fictional) public-health agency.
 
-Built for the OneAquaHealth IEEE Global Hackathon 2026. It is an **estimate, not a measured bacteria value**.
+Built for the OneAquaHealth IEEE Global Hackathon 2026.
 
 **Live dashboard: https://aquasentinel-prc9.onrender.com**
 
@@ -88,3 +88,7 @@ Optional environment variables are listed in `.env.example`. None of them are se
 - [`docs/deploy-render.md`](docs/deploy-render.md): deploying to Render
 - [`PRD.md`](PRD.md) and [`plan.md`](plan.md): requirements and milestones
 - [`SECURITY.md`](SECURITY.md): security rules for this public repo
+
+## License
+
+[MIT](LICENSE). This covers the code and docs in this repository. The data sources listed above keep their own terms.
