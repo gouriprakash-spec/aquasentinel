@@ -41,13 +41,13 @@
 <g class="card" data-name="Scheduler">
 <rect class="box" x="320" y="124" width="270" height="52" rx="10" fill="#F4F8FA" stroke="#9DB4BE" stroke-width="1.5"/>
 <text x="332" y="146" font-size="14" font-weight="700" fill="#1B2A2F">Scheduler</text>
-<text x="332" y="166" font-size="12.5" fill="#52646A">at startup + top of every hour</text>
+<text x="332" y="166" font-size="12.5" fill="#52646A">top of every hour (not at startup)</text>
 </g>
 <g class="card" data-name="Pull &amp; validate (httpx)">
 <rect class="box" x="320" y="206" width="270" height="76" rx="10" fill="#F4F8FA" stroke="#9DB4BE" stroke-width="1.5"/>
 <text x="332" y="228" font-size="14" font-weight="700" fill="#1B2A2F">Pull &amp; validate (httpx)</text>
-<text x="332" y="248" font-size="12.5" fill="#52646A">fail closed: a missing or malformed</text>
-<text x="332" y="265" font-size="12.5" fill="#52646A">input means nothing is stored</text>
+<text x="332" y="248" font-size="12.5" fill="#52646A">fail closed: missing rainfall means</text>
+<text x="332" y="265" font-size="12.5" fill="#52646A">nothing stored (no gauge is OK)</text>
 </g>
 <g class="card" data-name="Decide — deterministic code">
 <rect class="box" x="320" y="310" width="270" height="130" rx="10" fill="#E8F3EC" stroke="#4F9A72" stroke-width="1.5"/>
