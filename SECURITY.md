@@ -8,6 +8,7 @@ These rules apply to every change in this repository, regardless of who or what 
 - Never commit `.env`, never log secrets, never print them to the terminal.
 - Never read `.env` unless explicitly authorized for that specific task.
 - If a secret is ever detected in a diff, commit, or log — stop immediately and flag it. Do not proceed until it's resolved.
+- This repo is public: no tokens, phone numbers, or personal contact details in any committed file.
 
 ## Scope of Execution
 - Only run this project's tooling from inside the project directory — never from a home folder or drive root.

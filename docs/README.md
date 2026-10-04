@@ -8,7 +8,11 @@ Everything a builder needs, in one place. Paths below are relative to the repo r
 | `docs/landing-page/BUILD-SPEC.md` | Build instructions for the dashboard: data sources and endpoints, alert rules, agent-ready layer (MCP, `llms.txt`, JSON-LD) | What to build and how |
 | `docs/landing-page/index.html` | Reference implementation of the dashboard (plain HTML/CSS/JS); originally two mocked behaviors, all real now | Look, layout, and where real code plugs in |
 | `docs/alert-rules-decisions.md` | The six alerting decisions and their reasons | The exact rule values |
-| `docs/images/` | Maps: RiverCast coverage, the uncovered corridor, the Penn's Landing gauge setup | Context |
+| `docs/landing-page/llms.txt` | Plain-text notes for AI agents, served at `/llms.txt` | What agents are told about the service |
+| `docs/deploy-render.md` | How the app is deployed to Render | Deploying or re-deploying |
+| `docs/images/` | The architecture diagram (`architecture.svg`) and maps: RiverCast coverage, the uncovered corridor, the Penn's Landing gauge setup | Context |
+| `docs/superpowers/` | Design specs and implementation plans, one per milestone | A working history, not required reading |
+| `PRD.md`, `plan.md` (repo root) | Requirements; milestones, testing, rollout | Derived from `docs/`; if they drift, `docs/` wins |
 | `AquaSentinel-dataset/` | Training data, builder script, and `DATA-DICTIONARY.md` | Model training; read the dictionary before the CSVs |
 
 ## If documents disagree
