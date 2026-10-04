@@ -1,5 +1,8 @@
 # Advisory Reader Agent (native mode) — Design
 
+Status: designed, not built (cut 2026-10-02; see `docs/product-brief.md`'s Future directions).
+The "three co-equal contributions" framing below was superseded by that cut.
+
 ## Context and motivation
 
 `docs/product-brief.md` names three co-equal contributions: the agent-ready publishing

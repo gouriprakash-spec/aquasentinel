@@ -1,5 +1,8 @@
 # Sampling-request trigger protocol — design (Milestone 8, first decision set)
 
+Status: designed, not built (Milestone 8 was cut 2026-10-02; see `docs/product-brief.md`'s
+Future directions).
+
 Date: 2026-10-02. Decisions made with Gouri one at a time. Scope: **when** the Sampling
 Coordinator asks an agency for a confirmatory water sample. Not in scope here: the drafting
 agent, reading lab results back, the label gate, and retraining (each is its own piece of

@@ -20,7 +20,7 @@ How the status is decided (by deterministic code, never by an agent):
 - Safe/Unsafe comes from a disclosed rainfall rule: Unsafe when rain over the two previous
   calendar days is at least 2.5 mm. A nearby combined-sewer overflow reported by CSOCast can also
   force Unsafe; that check can only raise the status, never lower it.
-- Live USGS gauge readings (turbidity, temperature, conductance, dissolved oxygen, pH) feed a
+- Live USGS gauge readings (temperature, conductance, dissolved oxygen, pH) feed a
   model trained on past near-shore E. coli samples. The model never decides the status; it only
   produces `confidence`, the agreement between the rule and the model. When the gauge has no
   current reading, `confidence` and the water-quality values are null: read them as "not

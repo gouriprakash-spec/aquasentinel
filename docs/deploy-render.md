@@ -85,7 +85,7 @@ curl -s -X POST https://HOST/mcp -H "Content-Type: application/json" \
 The last call should return an `initialize` result, not `421`.
 
 ## 5. Connect an assistant (the demo)
-- **Claude Code (primary plan):** `claude mcp add --transport http aquasentinel https://HOST/mcp`,
+- **Claude Code (fallback to Muse):** `claude mcp add --transport http aquasentinel https://HOST/mcp`,
   then ask "Is the Delaware at Penn's Landing safe for kayaking right now?" It should call
   `get_current_status`. Check the answer keeps the word "estimate".
 - **Claude.ai / ChatGPT custom connectors:** same URL, no authentication. Availability depends on

@@ -1,6 +1,6 @@
 # Milestone 4 — FHIR out, with real Subscription mechanics
 
-Status: approved design, not yet implemented. Source of truth for what "expand Milestone 4"
+Status: implemented (see `plan.md`); kept as the design record. Source of truth for what "expand Milestone 4"
 means, per the conversation on 2026-09-26. Supersedes nothing — `plan.md`'s milestone list and
 `docs/alert-rules-decisions.md` still govern where this fits and what triggers it.
 

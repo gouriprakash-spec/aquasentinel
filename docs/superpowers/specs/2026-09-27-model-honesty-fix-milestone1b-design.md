@@ -1,6 +1,7 @@
 # Milestone 1b — Model honesty fix and rule-first pivot (incremental)
 
-Status: **APPROVED 2026-09-27** (Gouri), after an independent fresh re-derivation of every number
+Status: **IMPLEMENTED** (see `plan.md` and decision 6; the "not applied yet" wording below is the
+original pre-implementation note). **APPROVED 2026-09-27** (Gouri), after an independent fresh re-derivation of every number
 below (see Section 2b) confirmed the leak, confirmed the rule's signal on all three datasets, and
 surfaced one correction to this draft's own reasoning: turbidity does not hold up as a real
 feature anywhere it was tested (Section 2b.3) — the near-shore training set is widened from 14 to

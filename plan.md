@@ -7,7 +7,7 @@ what order. Build window closes Oct 4, 2026 (extended from the original Sep 30);
 AquaSentinel is a virtual (soft) water-quality sensor for the Center City tidal Delaware — the
 reach Philadelphia's existing RiverCast advisory cannot see. Because an E. coli lab culture takes
 18–24 hours, we estimate present-day risk from real-time proxies (rainfall and antecedent rain,
-turbidity, specific conductance, temperature, dissolved oxygen) and classify it Safe or Unsafe
+specific conductance, temperature, dissolved oxygen, pH) and classify it Safe or Unsafe
 against EPA's 235 CFU/100 mL single-sample limit. One scoring output feeds three surfaces: the
 dashboard banner, `/api/status` plus a read-only MCP server, and FHIR resources sent to a stubbed
 health agency. A Sampling Coordinator Agent that requests confirmatory samples where the model
@@ -159,15 +159,18 @@ Build top to bottom. If behind on Oct 1, **cut from the bottom, never the middle
     calling the same endpoint is the fallback.
 
 ## Technical Approach
-- **Architecture:** four stages — SOURCES → READ → DECIDE → ACT. Agents sit only in READ (and in
-  drafting within the sampling loop); a deterministic validator/gating layer owns DECIDE. See the
-  diagrams in `docs/product-brief.md`. The agents never call each other; each consumes the same
-  validated signal independently, so one failing cannot take the other down.
+- **Architecture:** four stages — SOURCES → READ → DECIDE → ACT, as designed. As built, there are
+  no agents in the pipeline (the Advisory Reader and Sampling Coordinator were cut 2026-10-02):
+  the scheduled job reads the sources, a deterministic validator/gating layer owns DECIDE, and
+  the outputs are the dashboard, `/api/status`, the read-only MCP server, and FHIR to RPHSA. See
+  the diagrams in `docs/product-brief.md`, where the cut agents are marked. The rule holds:
+  agents never decide.
 - **The contract** every component speaks:
   `{ location, time, risk tier, confidence, source, source_url, retrieved_at, evidence }`.
 - **Key components:**
-  - *Ingestion + scoring job* (scheduled): pulls USGS + NOAA, scores with the trained model,
-    emits one scoring output.
+  - *Ingestion + scoring job* (scheduled): pulls USGS + NWS (Open-Meteo as the fallback) +
+    CSOcast, applies the rainfall and CSO rules, gets the model's agreement figure, and emits one
+    scoring output.
   - *Validator + gating* (deterministic): schema, tier values, freshness, evidence check; then
     change of state, all-clear window, season, and recipient matching. Fails closed.
   - *Thin API server* (FastAPI): serves the static dashboard, `/api/status`, `/llms.txt`, and
@@ -175,28 +178,31 @@ Build top to bottom. If behind on Oct 1, **cut from the bottom, never the middle
   - *FHIR emitter*: Observation + Flag from the same scoring output, to the RPHSA stub.
   - *Sampling Coordinator Agent* + *label gate* (designed, not built - cut 2026-10-02): drafts
     and tracks; code decides what becomes a training label.
-- **Data flow:** USGS + NOAA → scoring job → **one** scoring output → (a) dashboard banner and
-  table, (b) `/api/status` + MCP + JSON-LD, (c) validator/gating → FHIR Flag to RPHSA, (d) on high
-  risk *or* low confidence → sampling request. Nothing computes status twice.
+- **Data flow:** USGS + NWS + CSOcast → scoring job → **one** scoring output → (a) dashboard
+  banner and table, (b) `/api/status` + MCP + JSON-LD, (c) validator/gating → FHIR Flag to RPHSA.
+  (A sampling request on high risk or low confidence was designed, then cut 2026-10-02.)
+  Nothing computes status twice.
 - **Stack:** Python 3.11, FastAPI, SQLite, scikit-learn, pandas, httpx, the official MCP Python
   SDK. Front end stays framework-free — extend `docs/landing-page/index.html`, do not rewrite it.
   Ask before installing each package.
-- **Config:** all thresholds in one config module, never inline. Undecided values (low-confidence
-  cutoff, forecast threshold T, and which CSOcast outfalls count as "near" Penn's Landing) stay
-  clearly marked placeholders — CSOcast's outfall-level data itself is verified and available
-  (see milestone 6); only the specific nearby-outfall selection is still a design decision.
+- **Config:** all thresholds in one config module, never inline. The one undecided value, the
+  forecast threshold T, stays a clearly marked placeholder. (The low-confidence cutoff was
+  derived 2026-09-27, and the CSOcast outfall set is a 5 km radius, decided 2026-10-01; see
+  milestones 1 and 6.)
 
 ## Testing Plan
-- **Alert rules** — unit tests per rule: freshness (>2h → unavailable), change of state only,
+- **Alert rules** — unit tests per rule: freshness (a stale or missing gauge gives an "n/a" row, not "unavailable"; amended
+  2026-10-03), change of state only,
   48-hour all-clear with an Unsafe reading restarting the clock, season gate (public May 1 –
   Oct 31, agency year-round).
-- **Fail-closed path** — a stale, malformed, or schema-invalid input produces "status
-  unavailable", no message, and never an all-clear.
+- **Fail-closed path** — missing rainfall data, or a malformed or schema-invalid input, produces
+  no row and, once the newest stored reading is over 2 hours old, "status unavailable", no
+  message, and never an all-clear.
 - **Consistency test** (required by the Definition of Done) — MCP output, `/api/status`, and the
   dashboard banner report the same tier and timestamp for one reading.
 - **Model validation** — precision/recall on the "unsafe" class against 235 CFU/100 mL, reported
-  honestly for the shipped model rather than blended across the 2021 instrument change. Done, in
-  `app/tests/test_model.py`.
+  honestly: on 69 near-shore days the rainfall rule (F1 0.643) beat the near-shore model
+  (F1 0.562). Done, in `app/tests/test_model.py`.
 - **MCP read-only** — assert no write tool is exposed.
 - **USGS parsing** — a fixture with multiple `values` blocks (including an empty `values[0]`)
   parses to the barge-block reading.
@@ -204,10 +210,11 @@ Build top to bottom. If behind on Oct 1, **cut from the bottom, never the middle
   `/api/status` agree; run one simulated event replay end to end.
 
 ## Risks
-- Too few unsafe labels (15 in the shipped post-2021 model) → ensemble + regression baseline +
-  rules fallback; report classification metrics; frame as a transferable proof-of-concept, not a
-  production model. The pre-2021 model (30 unsafe rows) was evaluated and dropped as not good
-  enough to ship (see milestone 1) rather than kept to look more thorough than it was.
+- Too few unsafe labels (30 unsafe of 69 near-shore days) → a disclosed rainfall rule decides
+  and the small model only reports agreement; report classification metrics; frame as a
+  transferable proof-of-concept, not a production model. The earlier channel-station model was
+  evaluated and dropped when honest validation showed no real skill (see milestone 1 and
+  decision 6), rather than kept to look more thorough than it was.
 - CSOcast per-outfall coverage is uneven (some outfalls' `LastPoll` is stale by years, sensor
   apparently offline) → fail closed per outfall on staleness, same pattern as the USGS gauge;
   rainfall-only fallback stands if the outfalls near Penn's Landing are ever all stale or
@@ -215,7 +222,8 @@ Build top to bottom. If behind on Oct 1, **cut from the bottom, never the middle
   access risk, only a per-outfall data-quality one.
 - Scope overrun near Oct 1 → cut from the bottom of the milestone list only. Oct 3–4 stay
   reserved for submission.
-- Bad lab result entering training → deterministic label gate; the agent cannot write labels.
+- (Cut with milestone 8.) Bad lab result entering training → deterministic label gate; the
+  agent cannot write labels.
 - Overclaiming → claim the design and one simulated loop turn, never a proven accuracy gain.
 
 ## Rollout
@@ -240,19 +248,17 @@ Build top to bottom. If behind on Oct 1, **cut from the bottom, never the middle
   alerting scope decision. It's inert - nothing reads it - but it's not deleted, since the M3
   gating tests already cover it correctly and ripping it out isn't needed for anything currently
   planned. Flagged here so it's a known, deliberate leftover, not silent dead code.
-- Run commands are not yet set up — fill in install / dev / test / lint in `CLAUDE.md` once the
-  project is scaffolded.
+- ~~Run commands are not yet set up.~~ Resolved: install / dev / test are in `CLAUDE.md`; only
+  lint/typecheck is still pending.
 - ~~`.env.example` still holds template placeholders.~~ Resolved 2026-10-03: it lists only the
   variables the app reads (there is no model API key).
 - CSOcast: measured or modeled, update rate, machine-readable feed, reuse terms.
 - ~~Low-confidence cutoff~~ derived 2026-09-27 (0.7467). Forecast threshold T is still to be
   *derived*, not chosen.
-- Which FHIR approach: a resource library or hand-built JSON validated against the OAH IG
-  profiles.
-- `app/mcp_server.py`'s `TransportSecuritySettings` allowlist only covers `testserver`/
-  `localhost:8000`/`127.0.0.1:8000` (Milestone 5) — a deliberate gap, not an oversight, since
-  no real deploy host is chosen yet (see the `deployment_target` decision). Once one is, add
-  its real hostname to both `allowed_hosts` and `allowed_origins` and update this line to say
-  it's done.
+- ~~Which FHIR approach: a resource library or hand-built JSON.~~ Resolved: hand-built JSON in
+  `app/fhir/resources.py`; there is no FHIR library in `requirements.txt`.
+- ~~`app/mcp_server.py`'s allowlist only covers localhost.~~ Resolved: the real hostname comes
+  from the `AQUASENTINEL_ALLOWED_HOSTS` environment variable (see `docs/deploy-render.md`
+  step 3).
 - ~~`docs/landing-page/llms.txt`'s `TODO_GITHUB_REPO_URL` placeholder.~~ Filled in 2026-10-03 with
   the GitHub repo URL; the link only works once the repo is public.

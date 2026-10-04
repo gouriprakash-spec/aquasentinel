@@ -126,8 +126,11 @@ the **same scoring output** as the banner and table; never compute status twice.
 
 1. **Status endpoint** — `GET /api/status` (and `?location=<id>`) returns the contract:
    `{ location, time, risk_tier, confidence, source: "aquasentinel", source_url, retrieved_at,
-   estimate_cfu_100ml, threshold_cfu_100ml: 235, model_version, regime, proxies: {...} }`.
-   Label it an estimate in the payload (e.g. `"kind": "model_estimate"`).
+   threshold_cfu_100ml: 235, model_version, regime, proxies: {...} }`.
+   Label it an estimate in the payload (e.g. `"kind": "model_estimate"`). There is deliberately
+   no `estimate_cfu_100ml` field: the shipped model gives a Safe/Unsafe tier and a rule/model
+   agreement figure, never a CFU value, and the system must not show a bacteria value it does
+   not have (tests enforce that the field is absent).
 2. **MCP server (read-only)** — expose these tools over MCP (Streamable HTTP transport):
    - `list_monitored_locations()` -> locations with id, name, coordinates, gauge id.
    - `get_current_status(location_id)` -> the same object as `/api/status`.

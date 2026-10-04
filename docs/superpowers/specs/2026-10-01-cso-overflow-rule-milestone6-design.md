@@ -1,6 +1,6 @@
 # Milestone 6 — CSO overflow rule
 
-Status: approved design, not yet implemented. Source of truth for what "build Milestone 6"
+Status: implemented (see `plan.md`); kept as the design record. Source of truth for what "build Milestone 6"
 means, per the conversation on 2026-10-01. Supersedes nothing — `plan.md`'s milestone list and
 `docs/alert-rules-decisions.md` still govern where this fits and what triggers it.
 

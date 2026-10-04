@@ -1,5 +1,7 @@
 # Advisory Reader Agent (Milestone 7) Implementation Plan
 
+Status: not built (cut 2026-10-02; see `docs/product-brief.md`'s Future directions). Kept for later.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build a component that *reads* an agent-ready source via a real MCP client session

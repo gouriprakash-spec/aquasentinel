@@ -1,6 +1,6 @@
 # Milestone 5 — Agent-ready layer (MCP, `/api/status`, `/llms.txt`, JSON-LD)
 
-Status: approved design, not yet implemented. Source of truth for this milestone, per the
+Status: implemented (see `plan.md`); kept as the design record. Source of truth for this milestone, per the
 conversation on 2026-09-27. `plan.md`'s milestone list still governs where this fits.
 
 ## Why this exists

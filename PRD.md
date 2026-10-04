@@ -19,7 +19,7 @@ rarer still. Label scarcity is the binding constraint, not an afterthought.
 
 ## Goal
 Ship a working prototype that estimates today's E. coli risk (Safe / Unsafe) for the Center City
-tidal Delaware from live USGS gauge and NOAA rainfall data, publishes it on an agent-ready
+tidal Delaware from live USGS gauge and NWS rainfall data, publishes it on an agent-ready
 dashboard and as standards-based FHIR to a stubbed public-health agency — demonstrated end to end
 for OneAquaHealth IEEE Global Hackathon 2026 judges by Oct 4, 2026 (extended from the original
 Sep 30). No direct-to-public alerting: see the scope decision below.
@@ -63,21 +63,24 @@ for readings.
 - As an AI agent, I want to call an MCP tool or `/api/status`, so that I can read the current risk
   tier reliably without scraping a page.
 - As the project team, I want the model to direct confirmatory sampling where it is unsure, so
-  that the label scarcity that limits the model today shrinks over time.
+  that the label scarcity that limits the model today shrinks over time. (Cut 2026-10-02, now a
+  Future direction.)
 
 ## Requirements
 ### Must-have (v1)
 Build order is top to bottom; see `plan.md` for the cut line.
-- **Model.** Tree ensemble (random forest) with an MLR baseline and a rules fallback, reporting
-  precision/recall on the "unsafe" class against the 235 CFU/100 mL threshold, never R². The
-  dataset's two regimes (pre-2021 without turbidity, post-2021 with it) were evaluated
-  **separately** — but only the post-2021 model ships. Live scoring always runs on "today", and
-  continuous turbidity has streamed since 2021-10-28, so the pre-2021 regime never applies to a
-  live reading; it was also outperformed by the rainfall-only rules fallback (see below), so
-  there was no case for shipping a second, weaker ML model. Decided 2026-09-25.
+- **Model.** A disclosed rainfall rule (rain over the two previous calendar days >= 2.5 mm)
+  decides Safe/Unsafe. A random forest trained on 69 near-shore sampled days (6 inputs: four
+  gauge readings plus two rainfall figures) only reports the rule/model agreement, because
+  honest, date-grouped validation showed the rule beat it (rule F1 0.643, model F1 0.562; the
+  rule's threshold was chosen from the same days, so its score is optimistic). Metrics are
+  precision/recall on the "unsafe" class against the 235 CFU/100 mL threshold, never R². See
+  decision 6 in `docs/alert-rules-decisions.md`. (An earlier design evaluated a pre-2021 and a
+  post-2021 regime separately; neither ships.)
 - **Real `pullReading()`.** Live proxies from USGS Penn's Landing gauge `01467200` (temp,
-  specific conductance, DO, pH, turbidity) plus NOAA NCEI antecedent rainfall at `USW00013739`,
-  scored by the model. The Safe/Unsafe tier is decided by deterministic code, not the model and
+  specific conductance, DO, pH, turbidity) plus hourly rainfall from NWS station KPHL
+  (Open-Meteo as the fallback; NOAA NCEI lags too much for live use), with the model giving only
+  the agreement figure. The Safe/Unsafe tier is decided by deterministic code, not the model and
   not an agent. Run by a scheduled job at the top of every hour (not at startup); the dashboard only reads the
   stored readings (the public pull button and route were removed 2026-10-02 so no visitor can
   trigger live requests to the data sources).
@@ -108,8 +111,8 @@ Build order is top to bottom; see `plan.md` for the cut line.
   AquaSentinel through its own MCP server and emitting the normalized contract with provenance —
   demonstrates the reader pattern is designed to extend to other advisory sites, not just
   AquaSentinel's own. Spec and plan are kept in `docs/superpowers/`.
-- CSO overflow rule: DONE 2026-10-01. Active overflow near the reach forces Unsafe and lowers
-  confidence, naming the reason.
+- CSO overflow rule: DONE 2026-10-01. Active overflow near the reach forces Unsafe, naming the
+  reason; it does not alter the confidence (amended 2026-10-03).
 - Rainfall-forecast heads-up from the NWS gridpoint `quantitativePrecipitation`, shown separately
   and labeled as forecast-based. It never changes the current tier. Blocked on deriving
   threshold T.
@@ -119,27 +122,28 @@ Build order is top to bottom; see `plan.md` for the cut line.
 - The dashboard banner, `/api/status`, and the MCP server report an identical tier and timestamp
   for the same reading — the consistency test passes.
 - A validated change of state to Unsafe produces a FHIR Flag at the RPHSA stub, year-round.
-- A stale (>2h) or malformed input yields "status unavailable", no message and no all-clear —
-  demonstrated live, not just asserted.
-- Precision and recall on the "unsafe" class are reported for the shipped (post-2021) model
-  honestly, with the dropped pre-2021 model's numbers kept on record as the reason it was cut.
+- Missing rainfall data or malformed input yields no row and, once the newest stored reading is
+  over 2 hours old, "status unavailable", no message and no all-clear — demonstrated live, not
+  just asserted. A silent gauge alone gives "n/a" water-quality columns, not "unavailable".
+- Validation numbers are reported honestly: on 69 near-shore days the rainfall rule (F1 0.643)
+  beat the model (F1 0.562), which is why the rule decides and the model only reports agreement.
 - A 3–5 minute demo video runs the full script end to end (see `docs/product-brief.md`).
 
 ## Risks & Assumptions
 - Risk: too few labeled samples — 30 unsafe rows pre-2021, 15 post-2021, is the binding
-  constraint → Mitigation: tree ensemble + regression baseline + rules fallback; classification
-  metrics not R²; framed as a transferable proof-of-concept; Pillar 2 is the long-term answer.
+  constraint → Mitigation: a disclosed rainfall rule decides and the small model only reports
+  agreement; classification metrics not R²; framed as a transferable proof-of-concept; Pillar 2 is the long-term answer.
 - Risk: CSOcast access or reuse terms do not work out → Mitigation: the CSO rule is the first
   thing cut; the rules fallback runs on rainfall alone.
-- Risk: a reader agent (e.g. the Advisory Reader Agent) paraphrases health risk in its own words →
+- Risk (for the cut agents, now Future directions): a reader agent (e.g. the Advisory Reader Agent) paraphrases health risk in its own words →
   Mitigation: fixed vocabulary around the published tier enforced at the code layer; agents never
   decide a tier.
 - Risk: "agents for show" skepticism → Mitigation: each agent handles external, unstructured work
   a rule cannot; every decision is deterministic and visible; the agents never call each other.
-- Risk: a bad lab result corrupts training data → Mitigation: the deterministic label gate (units,
+- Risk (for the cut Sampling Coordinator, now a Future direction): a bad lab result corrupts training data → Mitigation: the deterministic label gate (units,
   detection limits, sample time in window, location match, duplicates resolved to the maximum);
   the agent cannot write a label.
-- Assumption: USGS `01467200` and NOAA `USW00013739` stay available at documented cadence (the
+- Assumption: USGS `01467200` and NWS station KPHL stay available at documented cadence (the
   gauge reports every 5 minutes, provisional) through the demo window.
 - Assumption: the one value still undecided, the forecast threshold T, stays a clearly marked
   placeholder in config. We do not invent numbers. (The low-confidence cutoff and the CSO outfall
@@ -150,9 +154,8 @@ Build order is top to bottom; see `plan.md` for the cut line.
 ## Open Questions
 - CSOcast: is overflow status measured or modeled, how often does it update, is there a
   machine-readable feed, and do the City's reuse terms permit internal use?
-- Low-confidence cutoff — to be derived from the trained model's validation results, not chosen.
 - Forecast rain threshold T — to be derived from our own rainfall data.
-- The CSO outfall set near Penn's Landing — needs research into PWD outfall locations and the
-  tidal excursion on both sides of the reach.
+- Resolved: the low-confidence cutoff (2026-09-27) and the CSO outfall set, a 5 km radius from
+  Penn's Landing (2026-10-01).
 - RiverCast: reconcile the 2007 paper's indicator (described as fecal coliform) against the site's
   current E. coli description before citing either.
