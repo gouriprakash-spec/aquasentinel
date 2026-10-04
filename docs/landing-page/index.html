@@ -64,6 +64,7 @@
   .brand h1{margin:0;font-size:32px;letter-spacing:-0.02em;}
   .brand .tag{font-size:13.5px;color:var(--teal);font-weight:500;margin-top:2px;}
   .statement{font-size:15.5px;color:#33454E;line-height:1.6;margin-top:20px;}
+  .demo-label{align-self:flex-start;margin-top:16px;font-size:12.5px;font-weight:600;color:var(--teal);background:#7DC9F0;border-radius:16px;padding:6px 14px;}
   .chips{margin-top:auto;padding-top:12px;display:flex;gap:10px;flex-wrap:wrap;}
   .chips-label{flex-basis:100%;font-size:12.5px;font-weight:600;color:var(--muted);margin-bottom:-2px;}
   .chip{font-size:12.5px;color:var(--teal);background:var(--tealsoft);border-radius:8px;padding:7px 12px;}
@@ -142,6 +143,7 @@
         samples runs alongside; &ldquo;rule/model agreement&rdquo; shows how strongly it agrees with the
         rule, and is not the model's own verdict. Ben Franklin Bridge and Navy Yard are DRBC channel
         stations, shown for context.</div>
+      <div class="demo-label">Demo site for OneAquaHealth IEEE Hackathon 2026</div>
       <div class="chips">
         <div class="chips-label">Data Sources:</div>
         <a class="chip" href="https://waterdata.usgs.gov/monitoring-location/01467200/" target="_blank" rel="noopener noreferrer">USGS gauge 01467200</a>
@@ -196,8 +198,6 @@
         <tr>
           <th>PULL DATE</th>
           <th>PULL TIME</th>
-          <th>RAIN TODAY <span class="u">mm</span></th>
-          <th>RAIN 24H <span class="u">mm</span></th>
           <th>RAIN PRIOR 2 DAYS <span class="u">mm &middot; decides status</span></th>
           <th>TURBIDITY <span class="u">FNU</span></th>
           <th>TEMP <span class="u">&deg;C</span></th>
@@ -386,8 +386,6 @@
   function toDisplayRow(reading){
     var isStored = 'reading_time' in reading;
     var proxies = isStored ? reading : reading.evidence.proxies;
-    var rainToday = isStored ? reading.precip_mm : reading.evidence.rainfall_mm.precip_mm;
-    var rain24 = isStored ? reading.precip_prev_24h_mm : reading.evidence.rainfall_mm.precip_prev_24h_mm;
     // The value the rainfall rule actually decided the tier on, and what it was compared to.
     var rain48 = isStored ? reading.precip_prev_48h_mm : reading.evidence.rainfall_mm.precip_prev_48h_mm;
     var ruleThreshold = isStored ? reading.rule_threshold_mm : reading.evidence.rule_threshold_mm;
@@ -435,8 +433,6 @@
       gaugeMeasured: formatDateTime(time),
       checkedText: reading.retrieved_at ? formatDateTime(reading.retrieved_at) : null,
       cso: cso,
-      rainToday: round1(rainToday),
-      rain24: round1(rain24),
       rain48: fmt1(rain48),
       rain48Cell: rain48IsLowerBound ? '&ge;' + fmt1(rain48) : fmt1(rain48),
       rain48IsLowerBound: rain48IsLowerBound,
@@ -547,8 +543,6 @@
         '<tr style="'+rowbg+'">' +
         '<td class="mono" style="white-space:nowrap;">'+r.date+'</td>' +
         '<td class="mono">'+r.checked+'</td>' +
-        '<td class="mono">'+r.rainToday+'</td>' +
-        '<td class="mono">'+r.rain24+'</td>' +
         '<td class="mono est">'+r.rain48Cell+'</td>' +
         '<td class="mono">'+r.turb+'</td>' +
         '<td class="mono">'+r.temp+'</td>' +

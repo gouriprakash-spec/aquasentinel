@@ -380,3 +380,53 @@ def test_the_data_source_tags_are_links_to_the_sources_that_open_in_a_new_tab(mo
     }
     assert "<span class=\"chip\">" not in block  # none left as plain text
     assert "a.chip:hover" in page and "a.chip:focus-visible" in page  # they look and behave like links
+
+
+def test_the_table_has_no_rain_today_or_rain_24h_columns_and_stays_aligned(monkeypatch, tmp_path):
+    """Gouri, 2026-10-03: "rain today" and "rain 24h" were dropped from the table. They decide nothing
+    (only the rain over the two previous days does), every stored value was 0.0 (including the stretch
+    where NWS had 4.6 mm inside the rolling 24 hours), and most of those hours are unresolved anyway.
+    They stay in the API and the database for the model; only the page stopped showing them. The header
+    and the row template must keep the same number of columns, or the cells slide under the wrong titles."""
+    import re
+
+    client = _client(monkeypatch, tmp_path)
+    page = client.get("/").text
+
+    head = page[page.index("<thead>"):page.index("</thead>")]
+    template_start = page.index("'<tr style=\"'+rowbg+'\">'")
+    row_template = page[template_start:page.index("document.getElementById('tbody').innerHTML", template_start)]
+
+    assert "RAIN TODAY" not in page and "RAIN 24H" not in page
+    assert "RAIN PRIOR 2 DAYS" in head and "decides status" in head   # the column that decides the status stays
+    assert len(re.findall(r"<th[ >]", head)) == len(re.findall(r"<td[ >]", row_template)) == 11
+
+
+def test_the_intro_card_says_this_is_a_demo_site_for_the_hackathon(monkeypatch, tmp_path):
+    """Gouri, 2026-10-03: a small label in the empty space between the explanatory text and "Data
+    Sources:" says what this site is. It sits after the methodology paragraph and before the tags."""
+    client = _client(monkeypatch, tmp_path)
+
+    page = client.get("/").text
+
+    label = "Demo site for OneAquaHealth IEEE Hackathon 2026"
+    assert page.count(label) == 1
+    assert page.index('id="methodology"') < page.index(label) < page.index('<div class="chips">')
+
+
+def test_the_demo_label_is_a_light_blue_pill_with_dark_teal_text(monkeypatch, tmp_path):
+    """Gouri, 2026-10-03: the demo-site label uses the light blue from their reference image, #7DC9F0
+    (sampled from it: one solid color). As TEXT on white that blue has a contrast of only 1.83:1, so it
+    is the pill's BACKGROUND, with the page's dark teal text on it (4.61:1). It is a pill (a 16px radius: fully round on one line, and a tidy rounded box if it wraps on a phone), and it stays on the left, so it is not mistaken for the clickable tags below it.
+    rectangle, and it stays on the left, so it is not mistaken for the clickable tags below it."""
+    import re
+
+    client = _client(monkeypatch, tmp_path)
+    page = client.get("/").text
+
+    rule = re.search(r"\.demo-label\{([^}]*)\}", page).group(1)
+
+    assert "background:#7DC9F0" in rule
+    assert "color:var(--teal)" in rule
+    assert "border-radius:16px" in rule  # a full pill on one line; a tidy rounded box when it wraps on a phone
+    assert "align-self:flex-start" in rule  # inside a flex column it would otherwise stretch full width
